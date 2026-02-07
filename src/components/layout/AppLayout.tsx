@@ -3,11 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   FolderKanban,
-  TestTube2,
-  PlayCircle,
+  Bug,
   LogOut,
   Menu,
-  X,
   Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,6 +20,7 @@ interface AppLayoutProps {
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Projetos', href: '/projects', icon: FolderKanban },
+  { name: 'Bugs', href: '/bugs', icon: Bug },
 ];
 
 export function AppLayout({ children }: AppLayoutProps) {
