@@ -73,7 +73,7 @@ export function TestCaseDialog({
     if (!systemRequirement.trim()) {
       toast({
         title: 'Requisito necessário',
-        description: 'Informe o requisito do sistema para gerar os passos',
+        description: 'Informe o requisito do sistema para gerar o caso de teste',
         variant: 'destructive',
       });
       return;
@@ -88,6 +88,10 @@ export function TestCaseDialog({
 
       if (error) throw error;
 
+      // Auto-fill title if generated and current title is empty
+      if (data.title && !title.trim()) {
+        setTitle(data.title);
+      }
       if (data.steps) {
         setSteps(data.steps);
       }
@@ -96,8 +100,8 @@ export function TestCaseDialog({
       }
 
       toast({
-        title: 'Passos gerados com sucesso!',
-        description: 'Revise e ajuste conforme necessário',
+        title: 'Caso de teste gerado!',
+        description: 'Título, passos e resultado esperado preenchidos automaticamente',
       });
     } catch (error: any) {
       console.error('AI generation error:', error);
@@ -183,11 +187,41 @@ export function TestCaseDialog({
             <DialogDescription>
               {testCase
                 ? 'Atualize as informações do caso de teste'
-                : 'Crie um novo caso de teste com ajuda da IA'}
+                : 'Descreva o requisito e deixe a IA gerar o caso de teste completo'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="requirement">Requisito do Sistema</Label>
+              <Textarea
+                id="requirement"
+                placeholder="Descreva o requisito do sistema que será testado. Ex: O sistema deve permitir que o usuário faça login usando e-mail e senha válidos..."
+                value={systemRequirement}
+                onChange={(e) => setSystemRequirement(e.target.value)}
+                rows={3}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleGenerateWithAI}
+                disabled={generating}
+                className="w-full gap-2"
+              >
+                {generating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Gerando com IA...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Gerar Caso de Teste com IA
+                  </>
+                )}
+              </Button>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="title">Título do Teste</Label>
               <Input
@@ -241,31 +275,6 @@ export function TestCaseDialog({
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="requirement">Requisito do Sistema</Label>
-              <Textarea
-                id="requirement"
-                placeholder="Descreva o requisito do sistema que será testado..."
-                value={systemRequirement}
-                onChange={(e) => setSystemRequirement(e.target.value)}
-                rows={3}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleGenerateWithAI}
-                disabled={generating}
-                className="w-full"
-              >
-                {generating ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Sparkles className="w-4 h-4 mr-2" />
-                )}
-                Gerar Passos com IA
-              </Button>
             </div>
 
             <div className="space-y-2">

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { CheckCircle2, XCircle, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { TestCase } from '@/types';
@@ -22,6 +23,15 @@ interface TestExecutionDialogProps {
   onSuccess: () => void;
 }
 
+type Severity = 'critical' | 'high' | 'medium' | 'low';
+
+const severityConfig: Record<Severity, { label: string; className: string }> = {
+  critical: { label: 'Crítica', className: 'bg-destructive text-destructive-foreground' },
+  high: { label: 'Alta', className: 'bg-priority-high text-white' },
+  medium: { label: 'Média', className: 'bg-priority-medium text-white' },
+  low: { label: 'Baixa', className: 'bg-priority-low text-white' },
+};
+
 export function TestExecutionDialog({
   open,
   onOpenChange,
@@ -32,7 +42,68 @@ export function TestExecutionDialog({
   const [notes, setNotes] = useState('');
   const [bugDescription, setBugDescription] = useState('');
   const [loading, setLoading] = useState(false);
+  const [suggestedSeverity, setSuggestedSeverity] = useState<Severity | null>(null);
+  const [severityReason, setSeverityReason] = useState('');
+  const [analyzingSeverity, setAnalyzingSeverity] = useState(false);
   const { toast } = useToast();
+
+  // Reset state when dialog opens/closes
+  useEffect(() => {
+    if (!open) {
+      setStatus(null);
+      setNotes('');
+      setBugDescription('');
+      setSuggestedSeverity(null);
+      setSeverityReason('');
+    }
+  }, [open]);
+
+  // Debounced severity analysis
+  const analyzeSeverity = useCallback(async (description: string) => {
+    if (description.trim().length < 20) {
+      setSuggestedSeverity(null);
+      setSeverityReason('');
+      return;
+    }
+
+    setAnalyzingSeverity(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-test-steps', {
+        body: { 
+          action: 'suggest-severity',
+          bugDescription: description 
+        },
+      });
+
+      if (error) throw error;
+
+      if (data.severity) {
+        setSuggestedSeverity(data.severity as Severity);
+        setSeverityReason(data.reason || '');
+      }
+    } catch (error: any) {
+      console.error('Severity analysis error:', error);
+      // Silent fail - don't show toast for background analysis
+    } finally {
+      setAnalyzingSeverity(false);
+    }
+  }, []);
+
+  // Debounce effect for bug description changes
+  useEffect(() => {
+    if (status !== 'failed' || !bugDescription.trim()) {
+      setSuggestedSeverity(null);
+      setSeverityReason('');
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      analyzeSeverity(bugDescription);
+    }, 1000); // Wait 1 second after user stops typing
+
+    return () => clearTimeout(timeoutId);
+  }, [bugDescription, status, analyzeSeverity]);
 
   const handleSubmit = async () => {
     if (!status) {
@@ -61,12 +132,18 @@ export function TestExecutionDialog({
       return;
     }
 
+    // Format bug description with severity if available
+    let finalBugDescription = bugDescription;
+    if (status === 'failed' && suggestedSeverity) {
+      finalBugDescription = `[Severidade: ${severityConfig[suggestedSeverity].label}] ${bugDescription}`;
+    }
+
     // Insert the execution record
     const { error: executionError } = await supabase.from('test_executions').insert({
       test_case_id: testCase.id,
       status,
       notes: notes || null,
-      bug_description: status === 'failed' ? bugDescription : null,
+      bug_description: status === 'failed' ? finalBugDescription : null,
       executed_by: user.id,
     });
 
@@ -97,9 +174,6 @@ export function TestExecutionDialog({
     });
     onSuccess();
     onOpenChange(false);
-    setStatus(null);
-    setNotes('');
-    setBugDescription('');
     setLoading(false);
   };
 
@@ -163,15 +237,50 @@ export function TestExecutionDialog({
           </div>
 
           {status === 'failed' && (
-            <div className="space-y-2 animate-fade-in">
-              <Label htmlFor="bug">Descrição do Bug *</Label>
-              <Textarea
-                id="bug"
-                placeholder="Descreva o bug encontrado em detalhes..."
-                value={bugDescription}
-                onChange={(e) => setBugDescription(e.target.value)}
-                rows={4}
-              />
+            <div className="space-y-3 animate-fade-in">
+              <div className="space-y-2">
+                <Label htmlFor="bug">Descrição do Bug *</Label>
+                <Textarea
+                  id="bug"
+                  placeholder="Descreva o bug encontrado em detalhes..."
+                  value={bugDescription}
+                  onChange={(e) => setBugDescription(e.target.value)}
+                  rows={4}
+                />
+              </div>
+
+              {/* AI Severity Suggestion */}
+              {(analyzingSeverity || suggestedSeverity) && (
+                <div className="p-3 rounded-lg border border-border bg-muted/50 animate-fade-in">
+                  <div className="flex items-center gap-2 mb-2">
+                    {analyzingSeverity ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        <span className="text-sm font-medium">Analisando severidade...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-medium">Severidade sugerida pela IA:</span>
+                      </>
+                    )}
+                  </div>
+                  
+                  {suggestedSeverity && !analyzingSeverity && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4" />
+                        <Badge className={severityConfig[suggestedSeverity].className}>
+                          {severityConfig[suggestedSeverity].label}
+                        </Badge>
+                      </div>
+                      {severityReason && (
+                        <p className="text-xs text-muted-foreground">{severityReason}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
