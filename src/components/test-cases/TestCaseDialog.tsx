@@ -44,7 +44,7 @@ export function TestCaseDialog({
   const [expectedResult, setExpectedResult] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [testType, setTestType] = useState<'manual' | 'automated'>('manual');
-  const [status, setStatus] = useState<'draft' | 'ready' | 'running'>('draft');
+  const [status, setStatus] = useState<'draft' | 'ready' | 'running' | 'passed' | 'failed'>('draft');
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const { toast } = useToast();
@@ -236,6 +236,8 @@ export function TestCaseDialog({
                     <SelectItem value="draft">Rascunho</SelectItem>
                     <SelectItem value="ready">Pronto</SelectItem>
                     <SelectItem value="running">Em Execução</SelectItem>
+                    <SelectItem value="passed">Passou</SelectItem>
+                    <SelectItem value="failed">Falhou</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

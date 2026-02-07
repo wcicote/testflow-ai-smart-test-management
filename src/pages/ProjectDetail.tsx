@@ -8,6 +8,7 @@ import {
   Trash2,
   Edit2,
   PlayCircle,
+  Eye,
 } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Project, TestCase } from '@/types';
 import { TestCaseDialog } from '@/components/test-cases/TestCaseDialog';
 import { TestExecutionDialog } from '@/components/test-cases/TestExecutionDialog';
+import { TestCaseSheet } from '@/components/test-cases/TestCaseSheet';
 
 export default function ProjectDetail() {
   const { projectId } = useParams();
@@ -40,8 +42,10 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [executionDialogOpen, setExecutionDialogOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [editingTestCase, setEditingTestCase] = useState<TestCase | null>(null);
   const [selectedTestCase, setSelectedTestCase] = useState<TestCase | null>(null);
+  const [viewingTestCase, setViewingTestCase] = useState<TestCase | null>(null);
   const { toast } = useToast();
 
   const fetchData = async () => {
@@ -111,6 +115,11 @@ export default function ProjectDetail() {
     setExecutionDialogOpen(true);
   };
 
+  const handleView = (testCase: TestCase) => {
+    setViewingTestCase(testCase);
+    setSheetOpen(true);
+  };
+
   const openNewTestCase = () => {
     setEditingTestCase(null);
     setDialogOpen(true);
@@ -133,13 +142,23 @@ export default function ProjectDetail() {
         return 'status-badge status-ready';
       case 'running':
         return 'status-badge status-running';
+      case 'passed':
+        return 'status-badge status-passed';
+      case 'failed':
+        return 'status-badge status-failed';
       default:
         return 'status-badge status-draft';
     }
   };
 
   const priorityLabels = { low: 'Baixa', medium: 'Média', high: 'Alta' };
-  const statusLabels = { draft: 'Rascunho', ready: 'Pronto', running: 'Em Execução' };
+  const statusLabels: Record<string, string> = {
+    draft: 'Rascunho',
+    ready: 'Pronto',
+    running: 'Em Execução',
+    passed: 'Passou',
+    failed: 'Falhou',
+  };
   const typeLabels = { manual: 'Manual', automated: 'Automatizado' };
 
   if (loading) {
@@ -205,7 +224,11 @@ export default function ProjectDetail() {
                   </TableHeader>
                   <TableBody>
                     {testCases.map((testCase) => (
-                      <TableRow key={testCase.id}>
+                      <TableRow
+                        key={testCase.id}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => handleView(testCase)}
+                      >
                         <TableCell className="font-medium">{testCase.title}</TableCell>
                         <TableCell>
                           <span className={getPriorityClass(testCase.priority)}>
@@ -224,22 +247,26 @@ export default function ProjectDetail() {
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
+                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                               <Button variant="ghost" size="icon" className="h-8 w-8">
                                 <MoreHorizontal className="w-4 h-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleExecute(testCase)}>
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleView(testCase); }}>
+                                <Eye className="w-4 h-4 mr-2" />
+                                Visualizar
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExecute(testCase); }}>
                                 <PlayCircle className="w-4 h-4 mr-2" />
                                 Executar
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleEdit(testCase)}>
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEdit(testCase); }}>
                                 <Edit2 className="w-4 h-4 mr-2" />
                                 Editar
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onClick={() => handleDelete(testCase.id)}
+                                onClick={(e) => { e.stopPropagation(); handleDelete(testCase.id); }}
                                 className="text-destructive"
                               >
                                 <Trash2 className="w-4 h-4 mr-2" />
@@ -274,6 +301,12 @@ export default function ProjectDetail() {
           onSuccess={fetchData}
         />
       )}
+
+      <TestCaseSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        testCase={viewingTestCase}
+      />
     </AppLayout>
   );
 }

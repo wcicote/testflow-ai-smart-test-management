@@ -61,7 +61,8 @@ export function TestExecutionDialog({
       return;
     }
 
-    const { error } = await supabase.from('test_executions').insert({
+    // Insert the execution record
+    const { error: executionError } = await supabase.from('test_executions').insert({
       test_case_id: testCase.id,
       status,
       notes: notes || null,
@@ -69,24 +70,36 @@ export function TestExecutionDialog({
       executed_by: user.id,
     });
 
-    if (error) {
+    if (executionError) {
       toast({
         title: 'Erro ao registrar execução',
-        description: error.message,
+        description: executionError.message,
         variant: 'destructive',
       });
-    } else {
-      toast({
-        title: status === 'passed' ? 'Teste passou! ✓' : 'Bug registrado',
-        variant: status === 'passed' ? 'default' : 'destructive',
-      });
-      onSuccess();
-      onOpenChange(false);
-      setStatus(null);
-      setNotes('');
-      setBugDescription('');
+      setLoading(false);
+      return;
     }
 
+    // Auto-update test case status based on execution result
+    const { error: updateError } = await supabase
+      .from('test_cases')
+      .update({ status: status })
+      .eq('id', testCase.id);
+
+    if (updateError) {
+      console.error('Error updating test case status:', updateError);
+      // Don't fail the entire operation, just log the error
+    }
+
+    toast({
+      title: status === 'passed' ? 'Teste passou! ✓' : 'Bug registrado',
+      variant: status === 'passed' ? 'default' : 'destructive',
+    });
+    onSuccess();
+    onOpenChange(false);
+    setStatus(null);
+    setNotes('');
+    setBugDescription('');
     setLoading(false);
   };
 
