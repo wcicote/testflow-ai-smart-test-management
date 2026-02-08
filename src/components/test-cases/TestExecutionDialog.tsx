@@ -157,17 +157,7 @@ export function TestExecutionDialog({
       return;
     }
 
-    // Auto-update test case status based on execution result
-    const { error: updateError } = await supabase
-      .from('test_cases')
-      .update({ status: status })
-      .eq('id', testCase.id);
-
-    if (updateError) {
-      console.error('Error updating test case status:', updateError);
-      // Don't fail the entire operation, just log the error
-    }
-
+    // Status is now automatically synced via database trigger (sync_test_case_status)
     toast({
       title: status === 'passed' ? 'Teste passou! ✓' : 'Bug registrado',
       variant: status === 'passed' ? 'default' : 'destructive',
