@@ -77,6 +77,11 @@ export default {
           "4": "hsl(var(--chart-4))",
           "5": "hsl(var(--chart-5))",
         },
+        priority: {
+          low: "hsl(var(--success))",
+          medium: "hsl(var(--warning))",
+          high: "hsl(var(--destructive))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
