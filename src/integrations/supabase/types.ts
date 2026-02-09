@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      bug_evidences: {
+        Row: {
+          created_at: string
+          file_name: string
+          file_type: string
+          file_url: string
+          id: string
+          test_execution_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          file_type: string
+          file_url: string
+          id?: string
+          test_execution_id: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          file_type?: string
+          file_url?: string
+          id?: string
+          test_execution_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bug_evidences_test_execution_id_fkey"
+            columns: ["test_execution_id"]
+            isOneToOne: false
+            referencedRelation: "test_executions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           created_at: string
@@ -94,6 +129,7 @@ export type Database = {
       test_executions: {
         Row: {
           bug_description: string | null
+          bug_status: string | null
           created_at: string
           executed_by: string
           id: string
@@ -103,6 +139,7 @@ export type Database = {
         }
         Insert: {
           bug_description?: string | null
+          bug_status?: string | null
           created_at?: string
           executed_by: string
           id?: string
@@ -112,6 +149,7 @@ export type Database = {
         }
         Update: {
           bug_description?: string | null
+          bug_status?: string | null
           created_at?: string
           executed_by?: string
           id?: string
