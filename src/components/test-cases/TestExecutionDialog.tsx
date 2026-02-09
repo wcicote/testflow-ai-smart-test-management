@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { CheckCircle2, XCircle, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, Sparkles, AlertTriangle, Upload, X, ImageIcon, VideoIcon } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -32,6 +33,12 @@ const severityConfig: Record<Severity, { label: string; className: string }> = {
   low: { label: 'Baixa', className: 'bg-priority-low text-white' },
 };
 
+interface SelectedFile {
+  file: File;
+  preview: string;
+  type: 'image' | 'video';
+}
+
 export function TestExecutionDialog({
   open,
   onOpenChange,
@@ -45,9 +52,9 @@ export function TestExecutionDialog({
   const [suggestedSeverity, setSuggestedSeverity] = useState<Severity | null>(null);
   const [severityReason, setSeverityReason] = useState('');
   const [analyzingSeverity, setAnalyzingSeverity] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
   const { toast } = useToast();
 
-  // Reset state when dialog opens/closes
   useEffect(() => {
     if (!open) {
       setStatus(null);
@@ -55,6 +62,7 @@ export function TestExecutionDialog({
       setBugDescription('');
       setSuggestedSeverity(null);
       setSeverityReason('');
+      setSelectedFiles([]);
     }
   }, [open]);
 
@@ -84,13 +92,11 @@ export function TestExecutionDialog({
       }
     } catch (error: any) {
       console.error('Severity analysis error:', error);
-      // Silent fail - don't show toast for background analysis
     } finally {
       setAnalyzingSeverity(false);
     }
   }, []);
 
-  // Debounce effect for bug description changes
   useEffect(() => {
     if (status !== 'failed' || !bugDescription.trim()) {
       setSuggestedSeverity(null);
@@ -100,10 +106,61 @@ export function TestExecutionDialog({
 
     const timeoutId = setTimeout(() => {
       analyzeSeverity(bugDescription);
-    }, 1000); // Wait 1 second after user stops typing
+    }, 1000);
 
     return () => clearTimeout(timeoutId);
   }, [bugDescription, status, analyzeSeverity]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newFiles: SelectedFile[] = [];
+    for (const file of Array.from(files)) {
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+      if (!isImage && !isVideo) continue;
+      newFiles.push({
+        file,
+        preview: URL.createObjectURL(file),
+        type: isImage ? 'image' : 'video',
+      });
+    }
+    setSelectedFiles(prev => [...prev, ...newFiles]);
+    e.target.value = '';
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => {
+      const updated = [...prev];
+      URL.revokeObjectURL(updated[index].preview);
+      updated.splice(index, 1);
+      return updated;
+    });
+  };
+
+  const uploadEvidences = async (executionId: string) => {
+    for (const sf of selectedFiles) {
+      const filePath = `${executionId}/${Date.now()}_${sf.file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from('test-evidences')
+        .upload(filePath, sf.file);
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        continue;
+      }
+
+      const { data: urlData } = supabase.storage.from('test-evidences').getPublicUrl(filePath);
+
+      await supabase.from('bug_evidences').insert({
+        test_execution_id: executionId,
+        file_url: urlData.publicUrl,
+        file_type: sf.type,
+        file_name: sf.file.name,
+      });
+    }
+  };
 
   const handleSubmit = async () => {
     if (!status) {
@@ -132,20 +189,18 @@ export function TestExecutionDialog({
       return;
     }
 
-    // Format bug description with severity if available
     let finalBugDescription = bugDescription;
     if (status === 'failed' && suggestedSeverity) {
       finalBugDescription = `[Severidade: ${severityConfig[suggestedSeverity].label}] ${bugDescription}`;
     }
 
-    // Insert the execution record
-    const { error: executionError } = await supabase.from('test_executions').insert({
+    const { data: executionData, error: executionError } = await supabase.from('test_executions').insert({
       test_case_id: testCase.id,
       status,
       notes: notes || null,
       bug_description: status === 'failed' ? finalBugDescription : null,
       executed_by: user.id,
-    });
+    }).select('id').single();
 
     if (executionError) {
       toast({
@@ -157,9 +212,14 @@ export function TestExecutionDialog({
       return;
     }
 
-    // Status is now automatically synced via database trigger (sync_test_case_status)
+    // Upload evidences if any
+    if (selectedFiles.length > 0 && executionData) {
+      await uploadEvidences(executionData.id);
+    }
+
     toast({
       title: status === 'passed' ? 'Teste passou! ✓' : 'Bug registrado',
+      description: selectedFiles.length > 0 ? `${selectedFiles.length} evidência(s) anexada(s)` : undefined,
       variant: status === 'passed' ? 'default' : 'destructive',
     });
     onSuccess();
@@ -169,7 +229,7 @@ export function TestExecutionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Executar Teste</DialogTitle>
           <DialogDescription>{testCase.title}</DialogDescription>
@@ -239,7 +299,6 @@ export function TestExecutionDialog({
                 />
               </div>
 
-              {/* AI Severity Suggestion */}
               {(analyzingSeverity || suggestedSeverity) && (
                 <div className="p-3 rounded-lg border border-border bg-muted/50 animate-fade-in">
                   <div className="flex items-center gap-2 mb-2">
@@ -283,6 +342,50 @@ export function TestExecutionDialog({
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
             />
+          </div>
+
+          {/* Evidence Upload */}
+          <div className="space-y-2">
+            <Label>Evidências (opcional)</Label>
+            <label className="cursor-pointer">
+              <Input
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+              <Button variant="outline" size="sm" type="button" asChild>
+                <span>
+                  <Upload className="w-4 h-4 mr-1" />
+                  Anexar imagem ou vídeo
+                </span>
+              </Button>
+            </label>
+
+            {selectedFiles.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                {selectedFiles.map((sf, i) => (
+                  <div key={i} className="relative group border rounded-lg overflow-hidden">
+                    {sf.type === 'image' ? (
+                      <img src={sf.preview} alt={sf.file.name} className="w-full h-20 object-cover" />
+                    ) : (
+                      <div className="w-full h-20 bg-muted flex items-center justify-center">
+                        <VideoIcon className="w-6 h-6 text-muted-foreground" />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="absolute top-0.5 right-0.5 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => removeFile(i)}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                    <p className="text-[10px] px-1 truncate text-muted-foreground">{sf.file.name}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

@@ -1,4 +1,5 @@
-import { FileText, ListChecks, CheckCircle, Tag, Clock } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { FileText, ListChecks, CheckCircle, Tag, Clock, ImageIcon, VideoIcon, Loader2 } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
@@ -8,7 +9,8 @@ import {
 } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { TestCase } from '@/types';
+import { TestCase, BugEvidence } from '@/types';
+import { supabase } from '@/integrations/supabase/client';
 
 interface TestCaseSheetProps {
   open: boolean;
@@ -17,6 +19,40 @@ interface TestCaseSheetProps {
 }
 
 export function TestCaseSheet({ open, onOpenChange, testCase }: TestCaseSheetProps) {
+  const [evidences, setEvidences] = useState<BugEvidence[]>([]);
+  const [loadingEvidences, setLoadingEvidences] = useState(false);
+
+  useEffect(() => {
+    if (open && testCase) {
+      fetchEvidences();
+    } else {
+      setEvidences([]);
+    }
+  }, [open, testCase?.id]);
+
+  const fetchEvidences = async () => {
+    if (!testCase) return;
+    setLoadingEvidences(true);
+
+    // Get all executions for this test case, then their evidences
+    const { data: executions } = await supabase
+      .from('test_executions')
+      .select('id')
+      .eq('test_case_id', testCase.id);
+
+    if (executions && executions.length > 0) {
+      const executionIds = executions.map(e => e.id);
+      const { data } = await supabase
+        .from('bug_evidences')
+        .select('*')
+        .in('test_execution_id', executionIds)
+        .order('created_at', { ascending: false });
+
+      setEvidences((data || []) as BugEvidence[]);
+    }
+    setLoadingEvidences(false);
+  };
+
   if (!testCase) return null;
 
   const priorityLabels = { low: 'Baixa', medium: 'Média', high: 'Alta' };
@@ -31,37 +67,25 @@ export function TestCaseSheet({ open, onOpenChange, testCase }: TestCaseSheetPro
 
   const getPriorityClass = (priority: string) => {
     switch (priority) {
-      case 'high':
-        return 'bg-destructive text-destructive-foreground';
-      case 'medium':
-        return 'bg-warning text-warning-foreground';
-      default:
-        return 'bg-secondary text-secondary-foreground';
+      case 'high': return 'bg-destructive text-destructive-foreground';
+      case 'medium': return 'bg-warning text-warning-foreground';
+      default: return 'bg-secondary text-secondary-foreground';
     }
   };
 
   const getStatusClass = (status: string) => {
     switch (status) {
-      case 'ready':
-        return 'bg-primary text-primary-foreground';
-      case 'running':
-        return 'bg-warning text-warning-foreground';
-      case 'passed':
-        return 'bg-success text-success-foreground';
-      case 'failed':
-        return 'bg-destructive text-destructive-foreground';
-      default:
-        return 'bg-muted text-muted-foreground';
+      case 'ready': return 'bg-primary text-primary-foreground';
+      case 'running': return 'bg-warning text-warning-foreground';
+      case 'passed': return 'bg-success text-success-foreground';
+      case 'failed': return 'bg-destructive text-destructive-foreground';
+      default: return 'bg-muted text-muted-foreground';
     }
   };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
   };
 
@@ -138,8 +162,39 @@ export function TestCaseSheet({ open, onOpenChange, testCase }: TestCaseSheetPro
             </div>
           )}
 
-          {/* Empty state for missing details */}
-          {!testCase.steps && !testCase.expected_result && !testCase.system_requirement && (
+          {/* Evidências */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <ImageIcon className="w-4 h-4 text-primary" />
+              Evidências
+            </div>
+            {loadingEvidences ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : evidences.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">Nenhuma evidência anexada a este teste.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {evidences.map((ev) => (
+                  <div key={ev.id} className="border rounded-lg overflow-hidden">
+                    {ev.file_type === 'image' ? (
+                      <img src={ev.file_url} alt={ev.file_name} className="w-full h-32 object-cover" />
+                    ) : (
+                      <div className="relative">
+                        <video src={ev.file_url} controls className="w-full h-32 object-cover" />
+                        <VideoIcon className="absolute top-1 left-1 w-4 h-4 text-white drop-shadow" />
+                      </div>
+                    )}
+                    <p className="text-[10px] px-1 py-0.5 truncate text-muted-foreground">{ev.file_name}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Empty state */}
+          {!testCase.steps && !testCase.expected_result && !testCase.system_requirement && evidences.length === 0 && (
             <div className="text-center py-8">
               <FileText className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
               <p className="text-sm text-muted-foreground">
