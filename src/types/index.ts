@@ -35,12 +35,22 @@ export interface Bug {
   id: string;
   bug_description: string;
   status: 'failed';
+  bug_status: 'open' | 'in_progress' | 'resolved';
   created_at: string;
   test_case_id: string;
   test_case_title: string;
   project_id: string;
   project_name: string;
   priority: 'low' | 'medium' | 'high';
+}
+
+export interface BugEvidence {
+  id: string;
+  test_execution_id: string;
+  file_url: string;
+  file_type: 'image' | 'video';
+  file_name: string;
+  created_at: string;
 }
 
 export interface DashboardStats {
