@@ -9,7 +9,14 @@ import {
   Edit2,
   PlayCircle,
   Eye,
+  AlertTriangle,
 } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -46,6 +53,7 @@ export default function ProjectDetail() {
   const [editingTestCase, setEditingTestCase] = useState<TestCase | null>(null);
   const [selectedTestCase, setSelectedTestCase] = useState<TestCase | null>(null);
   const [viewingTestCase, setViewingTestCase] = useState<TestCase | null>(null);
+  const [openBugCounts, setOpenBugCounts] = useState<Record<string, number>>({});
   const { toast } = useToast();
 
   const fetchData = async () => {
@@ -80,7 +88,27 @@ export default function ProjectDetail() {
         variant: 'destructive',
       });
     } else {
-      setTestCases((testData as TestCase[]) || []);
+      const cases = (testData as TestCase[]) || [];
+      setTestCases(cases);
+
+      // Fetch open bug counts for failed test cases
+      const failedIds = cases.filter(tc => tc.status === 'failed').map(tc => tc.id);
+      if (failedIds.length > 0) {
+        const { data: bugData } = await supabase
+          .from('test_executions')
+          .select('test_case_id')
+          .eq('status', 'failed')
+          .neq('bug_status', 'resolved')
+          .in('test_case_id', failedIds);
+
+        const counts: Record<string, number> = {};
+        for (const row of bugData || []) {
+          counts[row.test_case_id] = (counts[row.test_case_id] || 0) + 1;
+        }
+        setOpenBugCounts(counts);
+      } else {
+        setOpenBugCounts({});
+      }
     }
 
     setLoading(false);
@@ -241,9 +269,23 @@ export default function ProjectDetail() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <span className={getStatusClass(testCase.status)}>
-                            {statusLabels[testCase.status]}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={getStatusClass(testCase.status)}>
+                              {statusLabels[testCase.status]}
+                            </span>
+                            {testCase.status === 'failed' && (openBugCounts[testCase.id] || 0) > 1 && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Múltiplos bugs impedindo este teste ({openBugCounts[testCase.id]} abertos)</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>
