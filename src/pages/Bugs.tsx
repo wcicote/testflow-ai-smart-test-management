@@ -35,6 +35,7 @@ export default function Bugs() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxType, setLightboxType] = useState<'image' | 'video'>('image');
   const [detailTarget, setDetailTarget] = useState<Bug | null>(null);
+  const [linkedBugCounts, setLinkedBugCounts] = useState<{ total: number; open: number } | null>(null);
   const { toast } = useToast();
 
   const fetchBugs = async () => {
@@ -91,6 +92,23 @@ export default function Bugs() {
     }
   };
 
+  const openDetail = async (bug: Bug) => {
+    setDetailTarget(bug);
+    setLinkedBugCounts(null);
+    const { count: totalCount } = await supabase
+      .from('test_executions')
+      .select('*', { count: 'exact', head: true })
+      .eq('test_case_id', bug.test_case_id)
+      .eq('status', 'failed');
+    const { count: openCount } = await supabase
+      .from('test_executions')
+      .select('*', { count: 'exact', head: true })
+      .eq('test_case_id', bug.test_case_id)
+      .eq('status', 'failed')
+      .neq('bug_status', 'resolved');
+    setLinkedBugCounts({ total: totalCount || 0, open: openCount || 0 });
+  };
+
   useEffect(() => { fetchBugs(); }, []);
 
   const handleStatusChange = async (bug: Bug, newStatus: string) => {
@@ -104,12 +122,36 @@ export default function Bugs() {
       return;
     }
 
-    if (newStatus === 'resolved') {
-      setSyncTarget(bug);
-    }
-
     setBugs(prev => prev.map(b => b.id === bug.id ? { ...b, bug_status: newStatus as Bug['bug_status'] } : b));
-    toast({ title: 'Status atualizado!' });
+
+    if (newStatus === 'resolved') {
+      // Check if there are other unresolved bugs for the same test case
+      const { count, error: countError } = await supabase
+        .from('test_executions')
+        .select('*', { count: 'exact', head: true })
+        .eq('test_case_id', bug.test_case_id)
+        .eq('status', 'failed')
+        .neq('bug_status', 'resolved')
+        .neq('id', bug.id);
+
+      if (countError) {
+        toast({ title: 'Status atualizado!' });
+        return;
+      }
+
+      const remainingOpen = count || 0;
+
+      if (remainingOpen > 0) {
+        toast({
+          title: 'Bug resolvido',
+          description: `O teste continua com status "Falhou" pois ainda existem ${remainingOpen} bug(s) aberto(s).`,
+        });
+      } else {
+        setSyncTarget(bug);
+      }
+    } else {
+      toast({ title: 'Status atualizado!' });
+    }
   };
 
   const handleSyncTestCase = async () => {
@@ -255,7 +297,7 @@ export default function Bugs() {
                         <TableCell className="text-sm text-muted-foreground">{formatDate(bug.created_at)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => setDetailTarget(bug)}>
+                            <Button variant="ghost" size="sm" onClick={() => openDetail(bug)}>
                               <Eye className="w-4 h-4 mr-1" />
                               Detalhes
                             </Button>
@@ -327,6 +369,15 @@ export default function Bugs() {
               </SheetHeader>
 
               <div className="mt-6 space-y-6">
+                {/* Linked bugs counter */}
+                {linkedBugCounts && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted border border-border">
+                    <BugIcon className="w-4 h-4 text-destructive" />
+                    <span className="text-sm text-foreground">
+                      Este teste possui <strong>{linkedBugCounts.total}</strong> bug(s) vinculado(s) (<strong>{linkedBugCounts.open}</strong> aberto(s))
+                    </span>
+                  </div>
+                )}
                 {/* Description */}
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
