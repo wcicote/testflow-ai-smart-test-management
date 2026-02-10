@@ -217,6 +217,14 @@ export function TestExecutionDialog({
       await uploadEvidences(executionData.id);
     }
 
+    // Force sync test_case status to 'failed' when bug is registered
+    if (status === 'failed') {
+      await supabase
+        .from('test_cases')
+        .update({ status: 'failed' })
+        .eq('id', testCase.id);
+    }
+
     toast({
       title: status === 'passed' ? 'Teste passou! ✓' : 'Bug registrado',
       description: selectedFiles.length > 0 ? `${selectedFiles.length} evidência(s) anexada(s)` : undefined,
