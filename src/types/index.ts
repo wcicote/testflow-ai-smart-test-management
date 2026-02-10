@@ -39,9 +39,11 @@ export interface Bug {
   created_at: string;
   test_case_id: string;
   test_case_title: string;
+  test_case_steps: string | null;
   project_id: string;
   project_name: string;
   priority: 'low' | 'medium' | 'high';
+  evidences?: BugEvidence[];
 }
 
 export interface BugEvidence {
