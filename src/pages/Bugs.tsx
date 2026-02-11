@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bug as BugIcon, ExternalLink, AlertCircle, MoreHorizontal, Trash2, ImageIcon, X, VideoIcon, Eye, Sparkles } from 'lucide-react';
+import { Bug as BugIcon, ExternalLink, AlertCircle, MoreHorizontal, Trash2, ImageIcon, X, VideoIcon, Eye, Sparkles, Filter, Flame, User } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,6 +40,9 @@ export default function Bugs() {
   const [linkedBugCounts, setLinkedBugCounts] = useState<{ total: number; open: number } | null>(null);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [failureCounts, setFailureCounts] = useState<Record<string, number>>({});
+  const [filter, setFilter] = useState<'all' | 'urgent' | 'mine'>('all');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchBugs = async () => {
@@ -47,7 +50,7 @@ export default function Bugs() {
       const { data, error } = await supabase
         .from('test_executions')
         .select(`
-          id, bug_description, status, bug_status, created_at, test_case_id,
+          id, bug_description, status, bug_status, created_at, test_case_id, executed_by,
           test_cases!inner ( id, title, priority, steps, project_id, projects!inner ( id, name ) )
         `)
         .eq('status', 'failed')
@@ -86,7 +89,15 @@ export default function Bugs() {
         project_name: item.test_cases.projects.name,
         priority: item.test_cases.priority,
         evidences: evidencesMap[item.id] || [],
+        executed_by: item.executed_by,
       }));
+
+      // Compute failure counts per test_case_id
+      const counts: Record<string, number> = {};
+      for (const b of formattedBugs) {
+        counts[b.test_case_id] = (counts[b.test_case_id] || 0) + 1;
+      }
+      setFailureCounts(counts);
 
       setBugs(formattedBugs);
     } catch (error: any) {
@@ -114,7 +125,10 @@ export default function Bugs() {
     setLinkedBugCounts({ total: totalCount || 0, open: openCount || 0 });
   };
 
-  useEffect(() => { fetchBugs(); }, []);
+  useEffect(() => {
+    fetchBugs();
+    supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id || null));
+  }, []);
 
   const handleSuggestRootCause = async (bug: Bug) => {
     setAiLoading(true);
@@ -256,37 +270,83 @@ export default function Bugs() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BugIcon className="w-5 h-5 text-destructive" />
-              Lista de Bugs ({bugs.length})
-            </CardTitle>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <CardTitle className="flex items-center gap-2">
+                <BugIcon className="w-5 h-5 text-destructive" />
+                Lista de Bugs ({bugs.length})
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={filter === 'all' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setFilter('all')}
+                >
+                  <Filter className="w-3.5 h-3.5 mr-1" />
+                  Todos
+                </Button>
+                <Button
+                  variant={filter === 'mine' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setFilter('mine')}
+                >
+                  <User className="w-3.5 h-3.5 mr-1" />
+                  Meus Bugs
+                </Button>
+                <Button
+                  variant={filter === 'urgent' ? 'destructive' : 'outline'}
+                  size="sm"
+                  onClick={() => setFilter('urgent')}
+                >
+                  <Flame className="w-3.5 h-3.5 mr-1" />
+                  Urgentes
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            {bugs.length === 0 ? (
-              <div className="text-center py-12">
-                <BugIcon className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold">Nenhum bug encontrado</h3>
-                <p className="text-muted-foreground mt-1">Excelente! Não há bugs registrados no sistema.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Severidade</TableHead>
-                      <TableHead>Descrição do Bug</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Evidência</TableHead>
-                      <TableHead>Caso de Teste</TableHead>
-                      <TableHead>Projeto</TableHead>
-                      <TableHead>Data</TableHead>
-                      <TableHead className="w-[150px]">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {bugs.map((bug) => (
-                      <TableRow key={bug.id}>
-                        <TableCell>{getSeverityBadge(bug.priority)}</TableCell>
+            {(() => {
+              const filteredBugs = bugs.filter(bug => {
+                if (filter === 'urgent') return bug.priority === 'high';
+                if (filter === 'mine') return bug.executed_by === currentUserId;
+                return true;
+              });
+
+              const getRowSeverityClass = (priority: string) => {
+                switch (priority) {
+                  case 'high': return 'bg-destructive/5 hover:bg-destructive/10';
+                  case 'medium': return 'bg-warning/5 hover:bg-warning/10';
+                  default: return '';
+                }
+              };
+
+              return filteredBugs.length === 0 ? (
+                <div className="text-center py-12">
+                  <BugIcon className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold">Nenhum bug encontrado</h3>
+                  <p className="text-muted-foreground mt-1">
+                    {filter !== 'all' ? 'Nenhum bug corresponde ao filtro selecionado.' : 'Excelente! Não há bugs registrados no sistema.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Severidade</TableHead>
+                        <TableHead>Descrição do Bug</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Recorrência</TableHead>
+                        <TableHead>Evidência</TableHead>
+                        <TableHead>Caso de Teste</TableHead>
+                        <TableHead>Projeto</TableHead>
+                        <TableHead>Data</TableHead>
+                        <TableHead className="w-[150px]">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredBugs.map((bug) => (
+                        <TableRow key={bug.id} className={getRowSeverityClass(bug.priority)}>
+                          <TableCell>{getSeverityBadge(bug.priority)}</TableCell>
                         <TableCell className="max-w-xs">
                           <p className="truncate font-medium" title={bug.bug_description}>{bug.bug_description}</p>
                         </TableCell>
@@ -295,6 +355,15 @@ export default function Bugs() {
                             value={bug.bug_status}
                             onValueChange={(v) => handleStatusChange(bug, v)}
                           />
+                        </TableCell>
+                        <TableCell>
+                          {(failureCounts[bug.test_case_id] || 1) > 1 ? (
+                            <Badge variant="outline" className="border-destructive/50 text-destructive">
+                              {failureCounts[bug.test_case_id]}ª falha registrada
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">1ª ocorrência</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           {bug.evidences && bug.evidences.length > 0 ? (
@@ -364,7 +433,8 @@ export default function Bugs() {
                   </TableBody>
                 </Table>
               </div>
-            )}
+              );
+            })()}
           </CardContent>
         </Card>
       </div>
