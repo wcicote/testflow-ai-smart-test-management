@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bug as BugIcon, ExternalLink, AlertCircle, MoreHorizontal, Trash2, ImageIcon, X, VideoIcon, Eye } from 'lucide-react';
+import { Bug as BugIcon, ExternalLink, AlertCircle, MoreHorizontal, Trash2, ImageIcon, X, VideoIcon, Eye, Sparkles } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -22,6 +23,7 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Bug, BugEvidence } from '@/types';
@@ -36,6 +38,8 @@ export default function Bugs() {
   const [lightboxType, setLightboxType] = useState<'image' | 'video'>('image');
   const [detailTarget, setDetailTarget] = useState<Bug | null>(null);
   const [linkedBugCounts, setLinkedBugCounts] = useState<{ total: number; open: number } | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
   const { toast } = useToast();
 
   const fetchBugs = async () => {
@@ -95,6 +99,7 @@ export default function Bugs() {
   const openDetail = async (bug: Bug) => {
     setDetailTarget(bug);
     setLinkedBugCounts(null);
+    setAiSuggestion(null);
     const { count: totalCount } = await supabase
       .from('test_executions')
       .select('*', { count: 'exact', head: true })
@@ -110,6 +115,35 @@ export default function Bugs() {
   };
 
   useEffect(() => { fetchBugs(); }, []);
+
+  const handleSuggestRootCause = async (bug: Bug) => {
+    setAiLoading(true);
+    setAiSuggestion(null);
+    try {
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-root-cause`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          title: bug.test_case_title,
+          description: bug.bug_description,
+          steps: bug.test_case_steps,
+        }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(err.error || `Erro ${resp.status}`);
+      }
+      const data = await resp.json();
+      setAiSuggestion(data.suggestion);
+    } catch (e: any) {
+      toast({ title: 'Erro na análise de IA', description: e.message, variant: 'destructive' });
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const handleStatusChange = async (bug: Bug, newStatus: string) => {
     const { error } = await supabase
@@ -399,6 +433,38 @@ export default function Bugs() {
                       {detailTarget.test_case_steps || 'Nenhum passo registrado para este caso de teste.'}
                     </p>
                   </div>
+                </div>
+
+                <Separator />
+
+                {/* AI Root Cause Suggestion */}
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2 border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-950"
+                    onClick={() => handleSuggestRootCause(detailTarget)}
+                    disabled={aiLoading}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    {aiLoading ? 'Analisando...' : 'Sugerir Causa Raiz (IA)'}
+                  </Button>
+
+                  {aiLoading && (
+                    <div className="space-y-2 p-4 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-5/6" />
+                      <Skeleton className="h-4 w-2/3" />
+                    </div>
+                  )}
+
+                  {aiSuggestion && !aiLoading && (
+                    <div className="p-4 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+                      <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
+                        <ReactMarkdown>{aiSuggestion}</ReactMarkdown>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <Separator />
