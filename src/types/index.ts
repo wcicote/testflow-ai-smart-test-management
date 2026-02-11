@@ -43,6 +43,7 @@ export interface Bug {
   project_id: string;
   project_name: string;
   priority: 'low' | 'medium' | 'high';
+  executed_by?: string;
   evidences?: BugEvidence[];
 }
 
