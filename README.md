@@ -1,73 +1,51 @@
-# Welcome to your Lovable project
+TestFlow AI - Smart Test Management 🚀
+TestFlow AI é uma plataforma de gestão de testes desenvolvida para modernizar o ciclo de vida de QA. O foco do projeto é integrar Inteligência Artificial na rotina do testador, garantindo que a qualidade seja monitorada de forma automática, desde o registro do caso de teste até a resolução final do bug.
 
-## Project info
+🛠️ Funcionalidades Principais
+• Gestão de Casos de Teste: CRUD completo de testes com interface intuitiva e moderna.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+• Relatório de Bugs com Evidências: Suporte a upload de fotos e vídeos (via Supabase Storage) para documentação técnica impecável.
 
-## How can I edit this code?
+• Inteligência Artificial (Lovable AI/Gemini):
 
-There are several ways of editing your application.
+   • Sugestão de Severidade: A IA analisa a descrição do erro e classifica automaticamente o impacto (Crítico, Alto, Médio, Baixo).
 
-**Use Lovable**
+   • Análise de Causa Raiz: Sugestões técnicas automáticas para desenvolvedores sobre onde o erro pode estar no código.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+• Automação de Fluxo (Status Sync):
 
-Changes made via Lovable will be committed automatically to this repo.
+  • Ao relatar um bug, o Caso de Teste muda automaticamente para "Falhou".
 
-**Use your preferred IDE**
+  • O teste só retorna ao status "Pronto" após a resolução do último bug vinculado (Lógica de dependência múltipla).
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+🧠 Diferenciais de QA (Onde o projeto brilha)
+Este projeto foi construído com a mentalidade de um Analista de QA. Foquei em resolver problemas reais do dia a dia:
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+  • Integridade dos Dados: Implementei uma trava lógica que impede o reteste prematuro. Se um caso de teste possui 3 bugs abertos, resolver apenas um não libera o teste. Isso garante que o ambiente esteja realmente estável para nova validação.
 
-Follow these steps:
+  • Rastreabilidade Multimídia: Eliminação da ambiguidade através de evidências visuais integradas diretamente ao relatório de falha.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+  • Redução de Subjetividade: Uso de LLMs para padronizar a severidade dos bugs, evitando conflitos de priorização entre times.
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+🚀 Roadmap (Próximos Passos)
+Devido ao ciclo de desenvolvimento planejado, as próximas iterações incluirão:
 
-# Step 3: Install the necessary dependencies.
-npm i
+  • [ ] Análise de Requisitos (Shift-Left): Módulo de IA para encontrar falhas em requisitos antes mesmo do início do desenvolvimento.
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+  • [ ] Suítes de Teste: Organização de repositórios por módulos e categorias (Fumaça, Regressão, Funcional).
 
-**Edit a file directly in GitHub**
+  • [ ] Exportação de Relatórios: Geração de PDFs profissionais com o resumo das execuções.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+💻 Tech Stack
+  • Frontend: React, Tailwind CSS, Shadcn/UI.
 
-**Use GitHub Codespaces**
+  • Backend & Database: Supabase (PostgreSQL).
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+  • Storage: Supabase Buckets (Mídias).
 
-## What technologies are used for this project?
+  • Inteligência Artificial: Lovable AI (Powered by Gemini).
 
-This project is built with:
+👤 Autor
+Wesley Cicote Analista de QA em transição de carreira
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+www.linkedin.com/in/wesley-cicote
