@@ -4,13 +4,19 @@ TestFlow AI é uma plataforma de gestão de testes desenvolvida para modernizar 
 🛠️ Funcionalidades Principais
 • Gestão de Casos de Teste: CRUD completo de testes com interface intuitiva e moderna.
 
+<img width="1913" height="858" alt="Captura de tela 2026-02-11 230524" src="https://github.com/user-attachments/assets/5e58cba7-88fc-4e82-9592-8d2415746712" />
+
 • Relatório de Bugs com Evidências: Suporte a upload de fotos e vídeos (via Supabase Storage) para documentação técnica impecável.
 
 • Inteligência Artificial (Lovable AI/Gemini):
 
    • Sugestão de Severidade: A IA analisa a descrição do erro e classifica automaticamente o impacto (Crítico, Alto, Médio, Baixo).
+   
+<img width="510" height="764" alt="Captura de tela 2026-02-11 231324" src="https://github.com/user-attachments/assets/9f26f807-a0cf-4fb9-abe3-30c31bfac868" />
 
    • Análise de Causa Raiz: Sugestões técnicas automáticas para desenvolvedores sobre onde o erro pode estar no código.
+   
+<img width="514" height="852" alt="Captura de tela 2026-02-11 230745" src="https://github.com/user-attachments/assets/3c097039-5903-4a8a-ae47-05e8855f9ae9" />
 
 • Automação de Fluxo (Status Sync):
 
