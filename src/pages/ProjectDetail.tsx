@@ -243,6 +243,7 @@ export default function ProjectDetail() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-[80px]">ID</TableHead>
                       <TableHead>Título</TableHead>
                       <TableHead>Prioridade</TableHead>
                       <TableHead>Tipo</TableHead>
@@ -257,7 +258,11 @@ export default function ProjectDetail() {
                         className="cursor-pointer hover:bg-muted/50"
                         onClick={() => handleView(testCase)}
                       >
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          TC-{testCase.case_number}
+                        </TableCell>
                         <TableCell className="font-medium">{testCase.title}</TableCell>
+
                         <TableCell>
                           <span className={getPriorityClass(testCase.priority)}>
                             {priorityLabels[testCase.priority]}

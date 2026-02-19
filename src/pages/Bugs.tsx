@@ -50,7 +50,7 @@ export default function Bugs() {
       const { data, error } = await supabase
         .from('test_executions')
         .select(`
-          id, bug_description, status, bug_status, created_at, test_case_id, executed_by,
+          id, execution_number, bug_description, status, bug_status, created_at, test_case_id, executed_by,
           test_cases!inner ( id, title, priority, steps, project_id, projects!inner ( id, name ) )
         `)
         .eq('status', 'failed')
@@ -78,6 +78,7 @@ export default function Bugs() {
 
       const formattedBugs: Bug[] = (data || []).map((item: any) => ({
         id: item.id,
+        execution_number: item.execution_number,
         bug_description: item.bug_description || 'Sem descrição',
         status: item.status,
         bug_status: item.bug_status || 'open',
@@ -131,29 +132,64 @@ export default function Bugs() {
   }, []);
 
   const handleSuggestRootCause = async (bug: Bug) => {
+    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!geminiKey) {
+      toast({
+        title: 'IA não configurada',
+        description: 'VITE_GEMINI_API_KEY não encontrada no arquivo .env',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setAiLoading(true);
     setAiSuggestion(null);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
     try {
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-root-cause`, {
+      console.log('Starting AI analysis for bug:', bug.id);
+      const prompt = `Você é um engenheiro de QA sênior. Analise o bug abaixo e forneça:
+1. **Causa Raiz Provável**: Uma explicação técnica concisa do que provavelmente causou o erro.
+2. **Sugestão de Correção**: Passos práticos que o desenvolvedor pode seguir para corrigir.
+
+**Título do Caso de Teste:** ${bug.test_case_title}
+**Descrição do Bug:** ${bug.bug_description}
+**Passos para Reproduzir:** ${bug.test_case_steps || 'Não informado'}
+
+Responda em português brasileiro, de forma técnica mas clara.`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: bug.test_case_title,
-          description: bug.bug_description,
-          steps: bug.test_case_steps,
+          contents: [
+            { role: 'user', parts: [{ text: prompt }] }
+          ]
         }),
+        signal: controller.signal
       });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: 'Erro desconhecido' }));
-        throw new Error(err.error || `Erro ${resp.status}`);
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Gemini API Error:', errorData);
+        throw new Error(errorData.error?.message || 'Erro na API do Gemini');
       }
-      const data = await resp.json();
-      setAiSuggestion(data.suggestion);
+
+      const result = await response.json();
+      console.log('AI Analysis result:', result);
+      const content = result.candidates?.[0]?.content?.parts?.[0]?.text || "Não foi possível gerar uma análise.";
+      setAiSuggestion(content);
     } catch (e: any) {
-      toast({ title: 'Erro na análise de IA', description: e.message, variant: 'destructive' });
+      console.error('AI Analysis error:', e);
+      toast({
+        title: 'Erro na análise de IA',
+        description: e.name === 'AbortError' ? 'A IA demorou muito para responder. Tente novamente.' : e.message,
+        variant: 'destructive'
+      });
     } finally {
       setAiLoading(false);
     }
@@ -332,8 +368,10 @@ export default function Bugs() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-[80px]">ID</TableHead>
                         <TableHead>Severidade</TableHead>
                         <TableHead>Descrição do Bug</TableHead>
+
                         <TableHead>Status</TableHead>
                         <TableHead>Recorrência</TableHead>
                         <TableHead>Evidência</TableHead>
@@ -346,93 +384,97 @@ export default function Bugs() {
                     <TableBody>
                       {filteredBugs.map((bug) => (
                         <TableRow key={bug.id} className={getRowSeverityClass(bug.priority)}>
+                          <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                            BUG-{bug.execution_number || bug.id.slice(0, 4).toUpperCase()}
+                          </TableCell>
                           <TableCell>{getSeverityBadge(bug.priority)}</TableCell>
-                        <TableCell className="max-w-xs">
-                          <p className="truncate font-medium" title={bug.bug_description}>{bug.bug_description}</p>
-                        </TableCell>
-                        <TableCell>
-                          <BugStatusSelect
-                            value={bug.bug_status}
-                            onValueChange={(v) => handleStatusChange(bug, v)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {(failureCounts[bug.test_case_id] || 1) > 1 ? (
-                            <Badge variant="outline" className="border-destructive/50 text-destructive">
-                              {failureCounts[bug.test_case_id]}ª falha registrada
-                            </Badge>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">1ª ocorrência</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {bug.evidences && bug.evidences.length > 0 ? (
+
+                          <TableCell className="max-w-xs">
+                            <p className="truncate font-medium" title={bug.bug_description}>{bug.bug_description}</p>
+                          </TableCell>
+                          <TableCell>
+                            <BugStatusSelect
+                              value={bug.bug_status}
+                              onValueChange={(v) => handleStatusChange(bug, v)}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {(failureCounts[bug.test_case_id] || 1) > 1 ? (
+                              <Badge variant="outline" className="border-destructive/50 text-destructive">
+                                {failureCounts[bug.test_case_id]}ª falha registrada
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">1ª ocorrência</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {bug.evidences && bug.evidences.length > 0 ? (
+                              <div className="flex items-center gap-1">
+                                {bug.evidences.slice(0, 2).map((ev) => (
+                                  <button
+                                    key={ev.id}
+                                    className="w-10 h-10 rounded border border-border overflow-hidden hover:ring-2 hover:ring-primary transition-all cursor-pointer flex-shrink-0"
+                                    onClick={() => openLightbox(ev.file_url, ev.file_type)}
+                                  >
+                                    {ev.file_type === 'image' ? (
+                                      <img src={ev.file_url} alt={ev.file_name} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <div className="w-full h-full bg-muted flex items-center justify-center">
+                                        <VideoIcon className="w-4 h-4 text-muted-foreground" />
+                                      </div>
+                                    )}
+                                  </button>
+                                ))}
+                                {bug.evidences.length > 2 && (
+                                  <span className="text-xs text-muted-foreground">+{bug.evidences.length - 2}</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm text-muted-foreground">{bug.test_case_title}</span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{bug.project_name}</Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{formatDate(bug.created_at)}</TableCell>
+                          <TableCell>
                             <div className="flex items-center gap-1">
-                              {bug.evidences.slice(0, 2).map((ev) => (
-                                <button
-                                  key={ev.id}
-                                  className="w-10 h-10 rounded border border-border overflow-hidden hover:ring-2 hover:ring-primary transition-all cursor-pointer flex-shrink-0"
-                                  onClick={() => openLightbox(ev.file_url, ev.file_type)}
-                                >
-                                  {ev.file_type === 'image' ? (
-                                    <img src={ev.file_url} alt={ev.file_name} className="w-full h-full object-cover" />
-                                  ) : (
-                                    <div className="w-full h-full bg-muted flex items-center justify-center">
-                                      <VideoIcon className="w-4 h-4 text-muted-foreground" />
-                                    </div>
-                                  )}
-                                </button>
-                              ))}
-                              {bug.evidences.length > 2 && (
-                                <span className="text-xs text-muted-foreground">+{bug.evidences.length - 2}</span>
-                              )}
+                              <Button variant="ghost" size="sm" onClick={() => openDetail(bug)}>
+                                <Eye className="w-4 h-4 mr-1" />
+                                Detalhes
+                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem asChild>
+                                    <Link to={`/projects/${bug.project_id}`}>
+                                      <ExternalLink className="w-4 h-4 mr-2" />
+                                      Ver Teste
+                                    </Link>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    onClick={() => setDeleteTarget(bug)}
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Excluir Bug
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm text-muted-foreground">{bug.test_case_title}</span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{bug.project_name}</Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{formatDate(bug.created_at)}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => openDetail(bug)}>
-                              <Eye className="w-4 h-4 mr-1" />
-                              Detalhes
-                            </Button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8">
-                                  <MoreHorizontal className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem asChild>
-                                  <Link to={`/projects/${bug.project_id}`}>
-                                    <ExternalLink className="w-4 h-4 mr-2" />
-                                    Ver Teste
-                                  </Link>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive"
-                                  onClick={() => setDeleteTarget(bug)}
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2" />
-                                  Excluir Bug
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               );
             })()}
           </CardContent>

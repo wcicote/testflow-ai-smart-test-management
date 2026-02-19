@@ -235,10 +235,14 @@ export default function Projects() {
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <Link to={`/projects/${project.id}`} className="flex-1">
-                      <CardTitle className="text-lg hover:text-primary transition-colors">
-                        {project.name}
-                      </CardTitle>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">PRJ-{project.project_number}</span>
+                        <CardTitle className="text-lg hover:text-primary transition-colors">
+                          {project.name}
+                        </CardTitle>
+                      </div>
                     </Link>
+
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8">

@@ -74,17 +74,42 @@ export function TestExecutionDialog({
       return;
     }
 
+    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!geminiKey) return;
+
     setAnalyzingSeverity(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('generate-test-steps', {
-        body: { 
-          action: 'suggest-severity',
-          bugDescription: description 
-        },
+      const prompt = `Você é um engenheiro de QA sênior. Analise a descrição do bug abaixo e sugira a severidade.
+Responda APENAS em JSON válido com esta estrutura:
+{
+  "severity": "critical" | "high" | "medium" | "low",
+  "reason": "Explicação curta do motivo"
+}
+
+Descrição do Bug: ${description}`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            { role: 'user', parts: [{ text: prompt }] }
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+          }
+        }),
       });
 
-      if (error) throw error;
+      if (!response.ok) throw new Error('Erro na API do Gemini');
+
+      const result = await response.json();
+      const content = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!content) return;
+
+      const data = JSON.parse(content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim());
 
       if (data.severity) {
         setSuggestedSeverity(data.severity as Severity);
@@ -322,7 +347,7 @@ export function TestExecutionDialog({
                       </>
                     )}
                   </div>
-                  
+
                   {suggestedSeverity && !analyzingSeverity && (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">

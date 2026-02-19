@@ -1,5 +1,6 @@
 export interface Project {
   id: string;
+  project_number: number;
   name: string;
   description: string | null;
   user_id: string;
@@ -7,9 +8,21 @@ export interface Project {
   updated_at: string;
 }
 
+export interface TestSuite {
+  id: string;
+  suite_number: number;
+  project_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TestCase {
   id: string;
+  case_number: number;
   project_id: string;
+  suite_id?: string | null;
   title: string;
   system_requirement: string | null;
   steps: string | null;
@@ -23,6 +36,7 @@ export interface TestCase {
 
 export interface TestExecution {
   id: string;
+  execution_number: number;
   test_case_id: string;
   status: 'passed' | 'failed';
   notes: string | null;
@@ -33,6 +47,7 @@ export interface TestExecution {
 
 export interface Bug {
   id: string;
+  execution_number: number;
   bug_description: string;
   status: 'failed';
   bug_status: 'open' | 'in_progress' | 'resolved';
@@ -46,6 +61,7 @@ export interface Bug {
   executed_by?: string;
   evidences?: BugEvidence[];
 }
+
 
 export interface BugEvidence {
   id: string;
@@ -62,3 +78,4 @@ export interface DashboardStats {
   activeBugs: number;
   successRate: number;
 }
+

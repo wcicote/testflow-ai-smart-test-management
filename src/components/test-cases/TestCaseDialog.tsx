@@ -21,23 +21,27 @@ import {
 } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { TestCase } from '@/types';
+import { TestCase, TestSuite } from '@/types';
 
 interface TestCaseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
   testCase: TestCase | null;
+  initialSuiteId?: string | null;
   onSuccess: () => void;
 }
+
 
 export function TestCaseDialog({
   open,
   onOpenChange,
   projectId,
   testCase,
+  initialSuiteId,
   onSuccess,
 }: TestCaseDialogProps) {
+
   const [title, setTitle] = useState('');
   const [systemRequirement, setSystemRequirement] = useState('');
   const [steps, setSteps] = useState('');
@@ -45,9 +49,25 @@ export function TestCaseDialog({
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [testType, setTestType] = useState<'manual' | 'automated'>('manual');
   const [status, setStatus] = useState<'draft' | 'ready' | 'running' | 'passed' | 'failed'>('draft');
+  const [suiteId, setSuiteId] = useState<string | null>(null);
+  const [suites, setSuites] = useState<TestSuite[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (open && projectId) {
+      const fetchSuites = async () => {
+        const { data } = await supabase
+          .from('test_suites')
+          .select('*')
+          .eq('project_id', projectId)
+          .order('name');
+        setSuites(data || []);
+      };
+      fetchSuites();
+    }
+  }, [open, projectId]);
 
   useEffect(() => {
     if (testCase) {
@@ -58,6 +78,7 @@ export function TestCaseDialog({
       setPriority(testCase.priority);
       setTestType(testCase.test_type);
       setStatus(testCase.status);
+      setSuiteId(testCase.suite_id || null);
     } else {
       setTitle('');
       setSystemRequirement('');
@@ -66,8 +87,10 @@ export function TestCaseDialog({
       setPriority('medium');
       setTestType('manual');
       setStatus('draft');
+      setSuiteId(initialSuiteId || null);
     }
-  }, [testCase, open]);
+  }, [testCase, open, initialSuiteId]);
+
 
   const handleGenerateWithAI = async () => {
     if (!systemRequirement.trim()) {
@@ -79,16 +102,54 @@ export function TestCaseDialog({
       return;
     }
 
+    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!geminiKey) {
+      toast({
+        title: 'Chave não encontrada',
+        description: 'A variável VITE_GEMINI_API_KEY não foi detectada. Certifique-se de ter reiniciado o terminal após editar o arquivo .env',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setGenerating(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('generate-test-steps', {
-        body: { systemRequirement },
+      const systemPrompt = `Você é um especialista em testes de software. Sua tarefa é gerar um caso de teste completo baseado em um requisito do sistema.
+Responda SEMPRE em JSON válido com esta estrutura exata:
+{
+  "title": "Título claro e descritivo do caso de teste",
+  "steps": "1. Passo um\\n2. Passo dois\\n3. Passo três...",
+  "expectedResult": "Descrição do resultado esperado"
+}`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: systemPrompt + "\n\nRequisito: " + systemRequirement }]
+            }
+          ]
+        }),
       });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Erro na API do Gemini');
+      }
 
-      // Auto-fill title if generated and current title is empty
+      const result = await response.json();
+      const content = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!content) throw new Error('A IA não retornou conteúdo.');
+
+      // Clear any potential markdown code blocks and parse JSON
+      const cleanContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const data = JSON.parse(cleanContent);
+
       if (data.title && !title.trim()) {
         setTitle(data.title);
       }
@@ -138,6 +199,7 @@ export function TestCaseDialog({
       test_type: testType,
       status,
       project_id: projectId,
+      suite_id: suiteId,
     };
 
     if (testCase) {
@@ -176,14 +238,16 @@ export function TestCaseDialog({
     setLoading(false);
   };
 
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>
-              {testCase ? 'Editar Caso de Teste' : 'Novo Caso de Teste'}
+            <DialogTitle className="flex items-center gap-2">
+              {testCase ? `Editar Caso de Teste (TC-${testCase.case_number})` : 'Novo Caso de Teste'}
             </DialogTitle>
+
             <DialogDescription>
               {testCase
                 ? 'Atualize as informações do caso de teste'
@@ -232,7 +296,22 @@ export function TestCaseDialog({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Suíte de Testes</Label>
+                <Select value={suiteId || 'none'} onValueChange={(v) => setSuiteId(v === 'none' ? null : v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sem suíte (Raiz)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem suíte (Raiz)</SelectItem>
+                    {suites.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label>Prioridade</Label>
                 <Select value={priority} onValueChange={(v: any) => setPriority(v)}>
@@ -246,7 +325,9 @@ export function TestCaseDialog({
                   </SelectContent>
                 </Select>
               </div>
+            </div>
 
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Tipo</Label>
                 <Select value={testType} onValueChange={(v: any) => setTestType(v)}>
@@ -276,6 +357,7 @@ export function TestCaseDialog({
                 </Select>
               </div>
             </div>
+
 
             <div className="space-y-2">
               <Label htmlFor="steps">Passos do Teste</Label>
