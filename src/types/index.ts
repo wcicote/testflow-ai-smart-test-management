@@ -25,8 +25,11 @@ export interface TestCase {
   suite_id?: string | null;
   title: string;
   system_requirement: string | null;
+  pre_conditions: string | null;
+  data_setup: string | null;
   steps: string | null;
   expected_result: string | null;
+  tags: string[];
   priority: 'low' | 'medium' | 'high';
   test_type: 'manual' | 'automated';
   status: 'draft' | 'ready' | 'running' | 'passed' | 'failed';

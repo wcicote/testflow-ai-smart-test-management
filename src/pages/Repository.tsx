@@ -10,11 +10,23 @@ import {
     ChevronRight,
     FolderOpen,
     TestTube2,
-    Settings2
+    Settings2,
+    X,
+    Tag,
+    ChevronDown,
+    Check,
+    RotateCcw
 } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
     DropdownMenu,
@@ -55,6 +67,10 @@ export default function Repository() {
     const [testCases, setTestCases] = useState<TestCase[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedTags, setSelectedTags] = useState<string[]>([]);
+    const [selectedPriority, setSelectedPriority] = useState<string>('all');
+
+    const ALL_TAGS = ['Regressão', 'Smoke', 'Sanity', 'Frontend', 'Backend', 'API', 'Mobile'];
 
     // Dialog states
     const [suiteDialogOpen, setSuiteDialogOpen] = useState(false);
@@ -204,9 +220,28 @@ export default function Repository() {
     };
 
 
-    const filteredTests = testCases.filter(tc =>
-        tc.title.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const clearFilters = () => {
+        setSearchTerm('');
+        setSelectedTags([]);
+        setSelectedPriority('all');
+    };
+
+    const hasActiveFilters = searchTerm !== '' || selectedTags.length > 0 || selectedPriority !== 'all';
+
+    const filteredTests = testCases.filter(tc => {
+        const matchesSearch = tc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            `TC-${tc.case_number}`.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesPriority = selectedPriority === 'all' || tc.priority === selectedPriority;
+        const matchesTags = selectedTags.length === 0 || selectedTags.every(tag => tc.tags?.includes(tag));
+
+        return matchesSearch && matchesPriority && matchesTags;
+    });
+
+    const toggleTagFilter = (tag: string) => {
+        setSelectedTags(prev =>
+            prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+        );
+    };
 
     return (
         <AppLayout>
@@ -233,8 +268,8 @@ export default function Repository() {
                             if (!open) setEditingSuite(null);
                         }}>
                             <DialogTrigger asChild>
-                                <Button 
-                                    variant="outline" 
+                                <Button
+                                    variant="outline"
                                     onClick={(e) => {
                                         if (!selectedProject) {
                                             e.preventDefault();
@@ -373,19 +408,127 @@ export default function Repository() {
 
                     {/* Main Content - Test Cases */}
                     <main className="flex-1 flex flex-col gap-4 overflow-hidden">
-                        <div className="flex items-center gap-4">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="Buscar casos de teste..."
-                                    className="pl-9"
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                />
+                        {/* Functional Toolbar */}
+                        <div className="flex flex-col gap-3">
+                            <div className="flex items-center gap-4">
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                                    <Input
+                                        placeholder="Buscar por título ou ID (TC-X)..."
+                                        className="pl-10 h-11 bg-slate-950 border-slate-800 transition-all focus:ring-primary/20 focus:border-primary"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {/* Multi-select Tags Filter */}
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className={cn(
+                                                    "h-11 border-slate-800 bg-slate-950 hover:bg-slate-900 px-4 transition-all",
+                                                    selectedTags.length > 0 && "border-primary/50 text-primary"
+                                                )}
+                                            >
+                                                <Tag className="w-4 h-4 mr-2" />
+                                                Tags
+                                                {selectedTags.length > 0 && (
+                                                    <span className="ml-2 bg-primary/20 text-primary rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold">
+                                                        {selectedTags.length}
+                                                    </span>
+                                                )}
+                                                <ChevronDown className="ml-2 w-4 h-4 opacity-50" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-56 p-2 bg-slate-900 border-slate-800 shadow-2xl" align="end">
+                                            <div className="space-y-1">
+                                                {ALL_TAGS.map((tag) => (
+                                                    <div
+                                                        key={tag}
+                                                        className="flex items-center justify-between px-2 py-1.5 hover:bg-slate-800 rounded-md cursor-pointer transition-colors"
+                                                        onClick={() => toggleTagFilter(tag)}
+                                                    >
+                                                        <div className="flex items-center gap-2">
+                                                            <Checkbox
+                                                                checked={selectedTags.includes(tag)}
+                                                                onCheckedChange={() => toggleTagFilter(tag)}
+                                                            />
+                                                            <span className="text-sm text-slate-300">{tag}</span>
+                                                        </div>
+                                                        {selectedTags.includes(tag) && <Check className="w-3 h-3 text-primary" />}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+
+                                    {/* Priority Filter */}
+                                    <Select value={selectedPriority} onValueChange={setSelectedPriority}>
+                                        <SelectTrigger
+                                            className={cn(
+                                                "w-36 h-11 bg-slate-950 border-slate-800 focus:ring-0 focus:ring-offset-0",
+                                                selectedPriority !== 'all' && "border-primary/50 text-primary"
+                                            )}
+                                        >
+                                            <SelectValue placeholder="Prioridade" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-slate-900 border-slate-800">
+                                            <SelectItem value="all">Todas Prioridades</SelectItem>
+                                            <SelectItem value="high">Alta</SelectItem>
+                                            <SelectItem value="medium">Média</SelectItem>
+                                            <SelectItem value="low">Baixa</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             </div>
-                            <Button variant="outline" size="icon">
-                                <Filter className="w-4 h-4" />
-                            </Button>
+
+                            {/* Active Filters Display */}
+                            {hasActiveFilters && (
+                                <div className="flex items-center flex-wrap gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mr-1">Filtros:</span>
+
+                                    {searchTerm && (
+                                        <Badge variant="secondary" className="bg-slate-800 text-slate-300 border-slate-700 pl-2 pr-1 h-6 gap-1 group">
+                                            Termo: {searchTerm}
+                                            <button onClick={() => setSearchTerm('')} className="hover:text-primary transition-colors">
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </Badge>
+                                    )}
+
+                                    {selectedTags.map(tag => (
+                                        <Badge
+                                            key={tag}
+                                            className="bg-primary/10 text-primary border-primary/30 pl-2 pr-1 h-6 gap-1 group shadow-[0_0_8px_rgba(59,130,246,0.1)]"
+                                        >
+                                            {tag}
+                                            <button onClick={() => toggleTagFilter(tag)} className="hover:text-white transition-colors">
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </Badge>
+                                    ))}
+
+                                    {selectedPriority !== 'all' && (
+                                        <Badge variant="secondary" className="bg-slate-800 text-slate-300 border-slate-700 pl-2 pr-1 h-6 gap-1">
+                                            Prioridade: {selectedPriority}
+                                            <button onClick={() => setSelectedPriority('all')} className="hover:text-primary transition-colors">
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </Badge>
+                                    )}
+
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={clearFilters}
+                                        className="h-6 px-2 text-[10px] text-primary hover:text-primary/80 hover:bg-primary/5 rounded-full"
+                                    >
+                                        <RotateCcw className="w-3 h-3 mr-1" />
+                                        Limpar tudo
+                                    </Button>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex-1 overflow-y-auto pr-2 space-y-3">
@@ -405,6 +548,23 @@ export default function Repository() {
                                                                 {tc.title}
                                                             </h3>
                                                         </div>
+                                                        {tc.tags && tc.tags.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1.5 mt-1">
+                                                                {tc.tags.slice(0, tc.tags.length > 3 ? 2 : 3).map((tag) => (
+                                                                    <span
+                                                                        key={tag}
+                                                                        className="text-[10px] px-1.5 py-0.5 rounded border border-primary/20 text-primary/80 font-medium"
+                                                                    >
+                                                                        {tag}
+                                                                    </span>
+                                                                ))}
+                                                                {tc.tags.length > 3 && (
+                                                                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-muted text-muted-foreground font-medium bg-muted/30">
+                                                                        +{tc.tags.length - 2}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                         <div className="flex items-center gap-3 mt-1">
                                                             <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded capitalize">
                                                                 {tc.priority}
