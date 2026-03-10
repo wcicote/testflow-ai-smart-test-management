@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Sparkles, Loader2, Tag, Info, Database, Plus, X } from 'lucide-react';
+import { Sparkles, Loader2, Tag, Info, Database, Plus, X, Code2, Copy, Check, Play, RefreshCw } from 'lucide-react';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -60,6 +67,10 @@ export function TestCaseDialog({
   const [suites, setSuites] = useState<TestSuite[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState<'happy' | 'edge' | null>(null);
+  const [automationFramework, setAutomationFramework] = useState<'cypress' | 'playwright'>('cypress');
+  const [automationScript, setAutomationScript] = useState('');
+  const [isGeneratingScript, setIsGeneratingScript] = useState(false);
+  const [accordionValue, setAccordionValue] = useState<string>("");
   const { toast } = useToast();
 
   const QUICK_ACCESS_TAGS = ['Regressão', 'Smoke', 'Frontend', 'Backend'];
@@ -111,20 +122,88 @@ export function TestCaseDialog({
       setStatus(testCase.status);
       setTags(testCase.tags || []);
       setSuiteId(testCase.suite_id || null);
-    } else {
-      setTitle('');
-      setSystemRequirement('');
-      setPreConditions('');
-      setDataSetup('');
-      setSteps('');
-      setExpectedResult('');
-      setPriority('medium');
-      setTestType('manual');
-      setStatus('draft');
-      setTags([]);
-      setSuiteId(initialSuiteId || null);
+      setAutomationScript(testCase.automation_script || '');
+      setAutomationFramework(testCase.automation_framework || 'cypress');
+      if (testCase.automation_script) {
+        setAccordionValue("automation");
+      }
+    } else if (open) {
+      // Recovery draft for NEW test cases
+      const draft = localStorage.getItem(`testflow_draft_${projectId}`);
+      if (draft) {
+        try {
+          const data = JSON.parse(draft);
+          setTitle(data.title || '');
+          setSystemRequirement(data.systemRequirement || '');
+          setPreConditions(data.preConditions || '');
+          setDataSetup(data.dataSetup || '');
+          setSteps(data.steps || '');
+          setExpectedResult(data.expectedResult || '');
+          setPriority(data.priority || 'medium');
+          setTestType(data.testType || 'manual');
+          setTags(data.tags || []);
+          setAutomationFramework(data.automationFramework || 'cypress');
+          setAutomationScript(data.automationScript || '');
+          if (data.automationScript) {
+            setAccordionValue("automation");
+          }
+          setSuiteId(data.suiteId || initialSuiteId || null);
+        } catch (e) {
+          console.error('Error recovering draft:', e);
+        }
+      } else {
+        // Reset to empty if no draft exists
+        setTitle('');
+        setSystemRequirement('');
+        setPreConditions('');
+        setDataSetup('');
+        setSteps('');
+        setExpectedResult('');
+        setPriority('medium');
+        setTestType('manual');
+        setStatus('draft');
+        setTags([]);
+        setSuiteId(initialSuiteId || null);
+        setAutomationScript('');
+        setAutomationFramework('cypress');
+        setAccordionValue("");
+      }
     }
-  }, [testCase, open, initialSuiteId]);
+  }, [testCase, open, initialSuiteId, projectId]);
+
+  // Auto-save draft effect
+  useEffect(() => {
+    if (!testCase && open) {
+      const draftData = {
+        title,
+        systemRequirement,
+        preConditions,
+        dataSetup,
+        steps,
+        expectedResult,
+        priority,
+        testType,
+        tags,
+        automationFramework,
+        automationScript,
+        suiteId,
+      };
+
+      const timeoutId = setTimeout(() => {
+        localStorage.setItem(`testflow_draft_${projectId}`, JSON.stringify(draftData));
+      }, 1000);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [
+    testCase, open, projectId, title, systemRequirement, preConditions,
+    dataSetup, steps, expectedResult, priority, testType, tags,
+    automationFramework, automationScript, suiteId
+  ]);
+
+  const clearDraft = () => {
+    localStorage.removeItem(`testflow_draft_${projectId}`);
+  };
 
 
   const handleGenerateWithAI = async (mode: 'happy' | 'edge') => {
@@ -156,6 +235,7 @@ export function TestCaseDialog({
 
 Input: [${systemRequirement}]
 Modo de Geração: [${modeName}]
+Framework Alvo para Automação: [${automationFramework === 'cypress' ? 'Cypress' : 'Playwright'}]
 
 Instruções de Saída (JSON Estrito):
 Você deve retornar apenas um objeto JSON seguindo este esquema, sem textos explicativos antes ou depois:
@@ -167,8 +247,16 @@ Você deve retornar apenas um objeto JSON seguindo este esquema, sem textos expl
   "passos": ["Passo 1...", "Passo 2...", "Passo 3..."],
   "resultado_esperado": "O estado final esperado do sistema",
   "prioridade": "Alta | Média | Baixa",
-  "tags_sugeridas": ["Array de tags baseadas no contexto"]
+  "tags_sugeridas": ["Array de tags baseadas no contexto"],
+  "script_automacao": "Código de automação funcional e resiliente"
 }
+
+Regras Específicas para 'script_automacao':
+1. GERE O SCRIPT APENAS PARA O FRAMEWORK: ${automationFramework === 'cypress' ? 'Cypress' : 'Playwright'}.
+2. Se Cypress: Use it(titulo, () => { ... }) e seletores data-testid.
+3. Se Playwright: Use test(titulo, async ({ page }) => { ... }) com locators modernos.
+4. Use os dados de 'massa_dados' e valide o 'resultado_esperado'.
+5. NUNCA inclua markdown (\`\`\`) dentro do valor da string JSON.
 
 Lógica de Auto-Tagging:
 Analise o requisito e inclua automaticamente no array tags_sugeridas as categorias que se aplicam:
@@ -179,7 +267,7 @@ Analise o requisito e inclua automaticamente no array tags_sugeridas as categori
 - Se o modo for 'Casos de Borda': #NegativeTest | #Resiliência
 Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -204,10 +292,16 @@ Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
       };
 
       setTitle(data.titulo || title);
-      setPreConditions(data.pre_condicoes || '');
-      setDataSetup(data.massa_dados || '');
+      setPreConditions(typeof data.pre_condicoes === 'object' ? JSON.stringify(data.pre_condicoes, null, 2) : data.pre_condicoes || '');
+      setDataSetup(typeof data.massa_dados === 'object' ? JSON.stringify(data.massa_dados, null, 2) : data.massa_dados || '');
       setSteps(Array.isArray(data.passos) ? data.passos.join('\n') : data.passos || '');
       setExpectedResult(data.resultado_esperado || '');
+      setAutomationScript(data.script_automacao || '');
+
+      if (data.script_automacao) {
+        setAccordionValue("automation");
+      }
+
       if (data.prioridade && priorityMap[data.prioridade]) {
         setPriority(priorityMap[data.prioridade]);
       }
@@ -232,6 +326,67 @@ Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
     } finally {
       setGenerating(null);
     }
+  };
+
+  const handleGenerateAutomationScript = async () => {
+    if (!steps.trim()) {
+      toast({ title: 'Passos necessários', description: 'Escreva os passos manuais primeiro.', variant: 'destructive' });
+      return;
+    }
+
+    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!geminiKey) return;
+
+    setIsGeneratingScript(true);
+    try {
+      const prompt = `Atue como um Principal QA Automation Engineer. Sua função é traduzir um caso de teste manual em um script de automação funcional e resiliente.
+
+Contexto de Entrada:
+Título: ${title}
+Passos: ${steps}
+Massa de Dados: ${dataSetup}
+Resultado Esperado: ${expectedResult}
+Framework Alvo: ${automationFramework === 'cypress' ? 'Cypress' : 'Playwright'}
+
+Instruções de Saída (REGRAS OBRIGATÓRIAS):
+1. GERE O SCRIPT APENAS PARA O FRAMEWORK: ${automationFramework === 'cypress' ? 'Cypress' : 'Playwright'}.
+2. NUNCA GERE DOIS FRAMEWORKS NO MESMO RESULTADO.
+3. Se o alvo for Cypress: Use it('${title}', () => { ... }) e procure usar data-testid nos seletores.
+4. Se o alvo for Playwright: Use test('${title}', async ({ page }) => { ... }) com locators modernos.
+5. Integração de Dados: Insira os valores da 'Massa de Dados' diretamente nos comandos de digitação/preenchimento.
+6. Validação Final: Inclua uma asserção (expect ou should) que verifique rigorosamente o 'Resultado Esperado'.
+7. Retorne APENAS o código bruto, sem explicações, sem markdown (sem \`\`\`), sem blocos de texto adicionais.`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        }),
+      });
+
+      const result = await response.json();
+      const content = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (content) {
+        const cleanCode = content.replace(/```(javascript|typescript|cypress|playwright)?\n?/g, "").replace(/```\n?/g, "").trim();
+        setAutomationScript(cleanCode);
+        toast({ title: 'Script gerado!', description: `Código em ${automationFramework} criado com sucesso.` });
+      }
+    } catch (error: any) {
+      toast({ title: 'Erro ao gerar script', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsGeneratingScript(false);
+    }
+  };
+
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    toast({ title: 'Copiado!', description: 'Código copiado para a área de transferência.' });
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const toggleTag = (tag: string) => {
@@ -260,6 +415,8 @@ Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
       status,
       project_id: projectId,
       suite_id: suiteId,
+      automation_script: automationScript || null,
+      automation_framework: automationFramework,
     };
 
     const { error } = testCase
@@ -270,6 +427,7 @@ Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
       toast({ title: 'Erro na operação', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: testCase ? 'Teste atualizado!' : 'Teste criado!' });
+      clearDraft(); // Clean draft on success
       onSuccess();
       onOpenChange(false);
     }
@@ -278,7 +436,10 @@ Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto bg-slate-950 border-slate-800 text-slate-100 p-0 overflow-hidden flex flex-col">
+      <DialogContent
+        onPointerDownOutside={(e) => e.preventDefault()}
+        className="max-w-4xl max-h-[95vh] overflow-y-auto bg-slate-950 border-slate-800 text-slate-100 p-0 overflow-hidden flex flex-col"
+      >
         <div className="p-6 border-b border-slate-800 bg-slate-900/50">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2 text-white">
@@ -530,6 +691,120 @@ Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
                   rows={3}
                   className="bg-slate-950 border-slate-700 focus:ring-emerald-500/30"
                 />
+              </div>
+
+              {/* Automation Section */}
+              <div className="mt-4 border-t border-slate-800 pt-6">
+                <Accordion
+                  type="single"
+                  collapsible
+                  className="w-full"
+                  value={accordionValue}
+                  onValueChange={setAccordionValue}
+                >
+                  <AccordionItem value="automation" className="border-slate-800">
+                    <AccordionTrigger className="hover:no-underline py-0">
+                      <div className="flex items-center gap-2 text-slate-300 font-semibold">
+                        <Code2 className="w-4 h-4 text-primary" />
+                        💻 Script de Automação Sugerido
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-4 space-y-4">
+                      <div className="flex items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800">
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm font-medium text-slate-400">Framework:</span>
+                          <div className="flex items-center gap-2">
+                            <span className={cn("text-xs transition-colors", automationFramework === 'cypress' ? "text-primary" : "text-slate-600")}>Cypress</span>
+                            <Switch
+                              checked={automationFramework === 'playwright'}
+                              onCheckedChange={(checked) => setAutomationFramework(checked ? 'playwright' : 'cypress')}
+                            />
+                            <span className={cn("text-xs transition-colors", automationFramework === 'playwright' ? "text-primary" : "text-slate-600")}>Playwright</span>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleGenerateAutomationScript}
+                          disabled={isGeneratingScript}
+                          className="h-8 border-primary/30 text-primary hover:bg-primary/10"
+                        >
+                          {isGeneratingScript ? (
+                            <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3 h-3 mr-2" />
+                          )}
+                          Refatorar Script
+                        </Button>
+                      </div>
+
+                      {isGeneratingScript ? (
+                        <div className="flex flex-col items-center justify-center py-12 bg-slate-900/30 border border-slate-800 rounded-xl space-y-4 animate-pulse">
+                          <div className="relative">
+                            <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full"></div>
+                            <Loader2 className="w-10 h-10 text-primary animate-spin relative z-10" />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-sm font-medium text-slate-300">Consultando Principal QA Engineer...</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Gerando script resiliente</p>
+                          </div>
+                        </div>
+                      ) : automationScript ? (
+                        <div className="relative group overflow-hidden rounded-xl border border-slate-800 bg-[#1e1e1e] shadow-2xl">
+                          <div className="flex items-center justify-between px-4 py-2 bg-slate-800/50 border-b border-slate-700">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                              {automationFramework}.spec.{automationFramework === 'cypress' ? 'js' : 'ts'}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 gap-2 text-slate-400 hover:text-white"
+                              onClick={() => copyToClipboard(automationScript)}
+                            >
+                              {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span className="text-xs">{copied ? 'Copiado' : 'Copiar'}</span>
+                            </Button>
+                          </div>
+                          <div className="p-4 text-[13px] font-mono leading-relaxed overflow-x-auto max-h-[400px] scrollbar-thin scrollbar-thumb-slate-700">
+                            <pre className="text-slate-300">
+                              <code className="block whitespace-pre">
+                                {automationScript.split('\n').map((line, i) => (
+                                  <div key={i} className="flex">
+                                    <span className="w-8 text-slate-600 text-right mr-4 select-none">{i + 1}</span>
+                                    <span className={cn(
+                                      line.trim().startsWith('//') ? "text-slate-500 italic" :
+                                        line.includes('it(') || line.includes('test(') ? "text-amber-400 font-bold" :
+                                          line.includes('expect(') || line.includes('.should(') ? "text-emerald-400 font-bold" :
+                                            "text-slate-300"
+                                    )}>
+                                      {line}
+                                    </span>
+                                  </div>
+                                ))}
+                              </code>
+                            </pre>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-8 bg-slate-950/50 border border-dashed border-slate-800 rounded-xl">
+                          <Play className="w-8 h-8 text-slate-700 mb-2" />
+                          <p className="text-sm text-slate-500">Nenhum script gerado ainda.</p>
+                          <Button
+                            type="button"
+                            variant="link"
+                            className="text-primary text-xs"
+                            onClick={handleGenerateAutomationScript}
+                            disabled={isGeneratingScript}
+                          >
+                            Gerar script inicial agora
+                          </Button>
+                        </div>
+                      )}
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
               </div>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { FileText, ListChecks, CheckCircle, Tag, Clock, ImageIcon, VideoIcon, Loader2 } from 'lucide-react';
+import { FileText, ListChecks, CheckCircle, Tag, Clock, ImageIcon, VideoIcon, Loader2, Code2, Copy, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import {
   Sheet,
   SheetContent,
@@ -115,6 +116,21 @@ export function TestCaseSheet({ open, onOpenChange, testCase }: TestCaseSheetPro
             </Badge>
           </div>
 
+          {/* Tags Section */}
+          {testCase.tags && testCase.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {testCase.tags.map((tag) => (
+                <Badge
+                  key={tag}
+                  variant="secondary"
+                  className="bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 text-[10px] px-2 py-0"
+                >
+                  {tag.startsWith('#') ? tag : `#${tag}`}
+                </Badge>
+              ))}
+            </div>
+          )}
+
           <Separator />
 
           {/* Requisito do Sistema */}
@@ -158,6 +174,37 @@ export function TestCaseSheet({ open, onOpenChange, testCase }: TestCaseSheetPro
                 <p className="text-sm text-muted-foreground whitespace-pre-line">
                   {testCase.expected_result}
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Script de Automação */}
+          {testCase.automation_script && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Code2 className="w-4 h-4 text-primary" />
+                  Script de Automação ({testCase.automation_framework === 'cypress' ? 'Cypress' : 'Playwright'})
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(testCase.automation_script || '');
+                    // Feedback visual opcional pode ser adicionado aqui com um toast
+                  }}
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                >
+                  <Copy className="w-3 h-3" />
+                  Copiar Código
+                </button>
+              </div>
+              <div className="relative group overflow-hidden rounded-lg border border-slate-800 bg-[#1e1e1e]">
+                <div className="p-4 text-[12px] font-mono leading-relaxed overflow-x-auto max-h-[300px] scrollbar-thin scrollbar-thumb-slate-700">
+                  <pre className="text-slate-300">
+                    <code className="block whitespace-pre">
+                      {testCase.automation_script}
+                    </code>
+                  </pre>
+                </div>
               </div>
             </div>
           )}

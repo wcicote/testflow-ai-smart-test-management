@@ -33,6 +33,8 @@ export interface TestCase {
   priority: 'low' | 'medium' | 'high';
   test_type: 'manual' | 'automated';
   status: 'draft' | 'ready' | 'running' | 'passed' | 'failed';
+  automation_script: string | null;
+  automation_framework: 'cypress' | 'playwright' | null;
   created_at: string;
   updated_at: string;
 }
