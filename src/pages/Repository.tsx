@@ -12,10 +12,11 @@ import {
     TestTube2,
     Settings2,
     X,
-    Tag,
     ChevronDown,
     Check,
-    RotateCcw
+    RotateCcw,
+    Copy,
+    Tag
 } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -200,11 +201,40 @@ export default function Repository() {
     };
 
     const handleDeleteTestCase = async (id: string) => {
+        if (!confirm('Tem certeza que deseja excluir este teste?')) return;
         const { error } = await supabase.from('test_cases').delete().eq('id', id);
         if (error) {
             toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
         } else {
             toast({ title: 'Caso de teste excluído' });
+            fetchSuitesAndTests();
+        }
+    };
+
+    const handleDuplicateTestCase = async (testCase: TestCase) => {
+        const newTestCase = {
+            project_id: testCase.project_id,
+            suite_id: testCase.suite_id,
+            title: `${testCase.title} (Cópia)`,
+            system_requirement: testCase.system_requirement,
+            pre_conditions: testCase.pre_conditions,
+            data_setup: testCase.data_setup,
+            steps: testCase.steps,
+            expected_result: testCase.expected_result,
+            tags: testCase.tags,
+            priority: testCase.priority,
+            test_type: testCase.test_type,
+            automation_script: testCase.automation_script,
+            automation_framework: testCase.automation_framework,
+            origin: testCase.origin,
+            status: 'draft'
+        };
+
+        const { error } = await supabase.from('test_cases').insert(newTestCase);
+        if (error) {
+            toast({ title: 'Erro ao duplicar', description: error.message, variant: 'destructive' });
+        } else {
+            toast({ title: 'Caso de teste duplicado' });
             fetchSuitesAndTests();
         }
     };
@@ -544,8 +574,13 @@ export default function Repository() {
                                                     <div>
                                                         <div className="flex items-center gap-2">
                                                             <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1 rounded">TC-{tc.case_number}</span>
-                                                            <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                                                            <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors flex items-center gap-2">
                                                                 {tc.title}
+                                                                {tc.origin === 'ai' && (
+                                                                    <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[10px] h-4 px-1">
+                                                                        AI
+                                                                    </Badge>
+                                                                )}
                                                             </h3>
                                                         </div>
                                                         {tc.tags && tc.tags.length > 0 && (
@@ -588,6 +623,10 @@ export default function Repository() {
                                                         <DropdownMenuItem onClick={() => openEditTestCase(tc)}>
                                                             <Edit2 className="w-4 h-4 mr-2" />
                                                             Editar
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem onClick={() => handleDuplicateTestCase(tc)}>
+                                                            <Copy className="w-4 h-4 mr-2" />
+                                                            Duplicar
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteTestCase(tc.id)}>
                                                             <Trash2 className="w-4 h-4 mr-2" />

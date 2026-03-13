@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { TestCase } from '@/types';
+import { AIBugReport, BugReport } from '@/components/ai/AIBugReport';
 
 interface TestExecutionDialogProps {
   open: boolean;
@@ -53,6 +54,7 @@ export function TestExecutionDialog({
   const [severityReason, setSeverityReason] = useState('');
   const [analyzingSeverity, setAnalyzingSeverity] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
+  const [generatedReport, setGeneratedReport] = useState<BugReport | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -63,6 +65,7 @@ export function TestExecutionDialog({
       setSuggestedSeverity(null);
       setSeverityReason('');
       setSelectedFiles([]);
+      setGeneratedReport(null);
     }
   }, [open]);
 
@@ -218,6 +221,10 @@ Descrição do Bug: ${description}`;
     if (status === 'failed' && suggestedSeverity) {
       finalBugDescription = `[Severidade: ${severityConfig[suggestedSeverity].label}] ${bugDescription}`;
     }
+    // If AI bug report was generated, append it
+    if (status === 'failed' && generatedReport) {
+      finalBugDescription += `\n\n--- Bug Report (IA) ---\nTítulo: ${generatedReport.titulo_bug}\nDescrição: ${generatedReport.descricao}\nSeveridade: ${generatedReport.severidade}\nImpacto: ${generatedReport.impacto}\nResultado Esperado: ${generatedReport.resultado_esperado}\nResultado Obtido: ${generatedReport.resultado_obtido}\nPassos: ${generatedReport.passos_reproducao.join(' | ')}${generatedReport.workaround ? `\nWorkaround: ${generatedReport.workaround}` : ''}`;
+    }
 
     const { data: executionData, error: executionError } = await supabase.from('test_executions').insert({
       test_case_id: testCase.id,
@@ -363,6 +370,14 @@ Descrição do Bug: ${description}`;
                   )}
                 </div>
               )}
+
+              {/* AI Bug Report Generator */}
+              <AIBugReport
+                testCase={testCase}
+                bugDescription={bugDescription}
+                notes={notes}
+                onApplyReport={(report) => setGeneratedReport(report)}
+              />
             </div>
           )}
 

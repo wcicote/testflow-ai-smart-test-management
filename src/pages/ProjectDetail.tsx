@@ -10,6 +10,7 @@ import {
   PlayCircle,
   Eye,
   AlertTriangle,
+  Copy,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -28,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,6 +43,8 @@ import { Project, TestCase } from '@/types';
 import { TestCaseDialog } from '@/components/test-cases/TestCaseDialog';
 import { TestExecutionDialog } from '@/components/test-cases/TestExecutionDialog';
 import { TestCaseSheet } from '@/components/test-cases/TestCaseSheet';
+import { TestSuitesList } from '@/components/test-suites/TestSuitesList';
+import { TestRunsList } from '@/components/test-runs/TestRunsList';
 
 export default function ProjectDetail() {
   const { projectId } = useParams();
@@ -133,6 +137,39 @@ export default function ProjectDetail() {
     }
   };
 
+  const handleDuplicate = async (testCase: TestCase) => {
+    const newTestCase = {
+      project_id: testCase.project_id,
+      suite_id: testCase.suite_id,
+      title: `${testCase.title} (Cópia)`,
+      system_requirement: testCase.system_requirement,
+      pre_conditions: testCase.pre_conditions,
+      data_setup: testCase.data_setup,
+      steps: testCase.steps,
+      expected_result: testCase.expected_result,
+      tags: testCase.tags,
+      priority: testCase.priority,
+      test_type: testCase.test_type,
+      automation_script: testCase.automation_script,
+      automation_framework: testCase.automation_framework,
+      origin: testCase.origin,
+      status: 'draft'
+    };
+
+    const { error } = await supabase.from('test_cases').insert(newTestCase);
+
+    if (error) {
+       toast({
+        title: 'Erro ao duplicar',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } else {
+      toast({ title: 'Caso de teste duplicado' });
+      fetchData();
+    }
+  };
+
   const handleEdit = (testCase: TestCase) => {
     setEditingTestCase(testCase);
     setDialogOpen(true);
@@ -221,115 +258,149 @@ export default function ProjectDetail() {
           </Button>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Casos de Teste</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {testCases.length === 0 ? (
-              <div className="text-center py-12">
-                <TestTube2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold">Nenhum teste ainda</h3>
-                <p className="text-muted-foreground mt-1 mb-4">
-                  Crie seu primeiro caso de teste
-                </p>
-                <Button onClick={openNewTestCase}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Criar Teste
-                </Button>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[80px]">ID</TableHead>
-                      <TableHead>Título</TableHead>
-                      <TableHead>Prioridade</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="w-[100px]">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {testCases.map((testCase) => (
-                      <TableRow
-                        key={testCase.id}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => handleView(testCase)}
-                      >
-                        <TableCell className="font-mono text-xs text-muted-foreground">
-                          TC-{testCase.case_number}
-                        </TableCell>
-                        <TableCell className="font-medium">{testCase.title}</TableCell>
+        <Tabs defaultValue="cases" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="cases">Casos de Teste</TabsTrigger>
+            <TabsTrigger value="suites">Suítes de Teste</TabsTrigger>
+            <TabsTrigger value="executions">Histórico de Execuções</TabsTrigger>
+          </TabsList>
 
-                        <TableCell>
-                          <span className={getPriorityClass(testCase.priority)}>
-                            {priorityLabels[testCase.priority]}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {typeLabels[testCase.test_type]}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <span className={getStatusClass(testCase.status)}>
-                              {statusLabels[testCase.status]}
-                            </span>
-                            {testCase.status === 'failed' && (openBugCounts[testCase.id] || 0) > 1 && (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0" />
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Múltiplos bugs impedindo este teste ({openBugCounts[testCase.id]} abertos)</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreHorizontal className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleView(testCase); }}>
-                                <Eye className="w-4 h-4 mr-2" />
-                                Visualizar
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExecute(testCase); }}>
-                                <PlayCircle className="w-4 h-4 mr-2" />
-                                Executar
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEdit(testCase); }}>
-                                <Edit2 className="w-4 h-4 mr-2" />
-                                Editar
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={(e) => { e.stopPropagation(); handleDelete(testCase.id); }}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Excluir
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          <TabsContent value="cases" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Casos de Teste</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {testCases.length === 0 ? (
+                  <div className="text-center py-12">
+                    <TestTube2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-semibold">Nenhum teste ainda</h3>
+                    <p className="text-muted-foreground mt-1 mb-4">
+                      Crie seu primeiro caso de teste
+                    </p>
+                    <Button onClick={openNewTestCase}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Criar Teste
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[80px]">ID</TableHead>
+                          <TableHead>Título</TableHead>
+                          <TableHead>Prioridade</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="w-[100px]">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {testCases.map((testCase) => (
+                          <TableRow
+                            key={testCase.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => handleView(testCase)}
+                          >
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              TC-{testCase.case_number}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                {testCase.title}
+                                {testCase.origin === 'ai' && (
+                                  <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[10px] h-4 px-1 flex-shrink-0">
+                                    AI
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+
+                            <TableCell>
+                              <span className={getPriorityClass(testCase.priority)}>
+                                {priorityLabels[testCase.priority]}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">
+                                {typeLabels[testCase.test_type]}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1.5">
+                                <span className={getStatusClass(testCase.status)}>
+                                  {statusLabels[testCase.status]}
+                                </span>
+                                {testCase.status === 'failed' && (openBugCounts[testCase.id] || 0) > 1 && (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0" />
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Múltiplos bugs impedindo este teste ({openBugCounts[testCase.id]} abertos)</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleView(testCase); }}>
+                                    <Eye className="w-4 h-4 mr-2" />
+                                    Visualizar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExecute(testCase); }}>
+                                    <PlayCircle className="w-4 h-4 mr-2" />
+                                    Executar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEdit(testCase); }}>
+                                    <Edit2 className="w-4 h-4 mr-2" />
+                                    Editar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleDuplicate(testCase); }}>
+                                    <Copy className="w-4 h-4 mr-2" />
+                                    Duplicar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={(e) => { 
+                                      e.stopPropagation(); 
+                                      if(confirm('Tem certeza que deseja excluir este teste?')) handleDelete(testCase.id); 
+                                    }}
+                                    className="text-destructive"
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Excluir
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="suites">
+            <TestSuitesList projectId={projectId!} onSuccess={fetchData} />
+          </TabsContent>
+
+          <TabsContent value="executions">
+            <TestRunsList projectId={projectId!} />
+          </TabsContent>
+        </Tabs>
       </div>
 
       <TestCaseDialog

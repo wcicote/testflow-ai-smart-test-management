@@ -35,6 +35,20 @@ export interface TestCase {
   status: 'draft' | 'ready' | 'running' | 'passed' | 'failed';
   automation_script: string | null;
   automation_framework: 'cypress' | 'playwright' | null;
+  origin: 'manual' | 'ai';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestRun {
+  id: string;
+  run_number: number;
+  project_id: string;
+  suite_id?: string | null;
+  name: string;
+  status: 'running' | 'paused' | 'passed' | 'failed' | 'completed';
+  executed_by: string;
+  test_suites?: { name: string };
   created_at: string;
   updated_at: string;
 }
@@ -43,7 +57,8 @@ export interface TestExecution {
   id: string;
   execution_number: number;
   test_case_id: string;
-  status: 'passed' | 'failed';
+  test_run_id?: string | null;
+  status: 'passed' | 'failed' | 'blocked' | 'not_executed' | 'untested';
   notes: string | null;
   bug_description: string | null;
   executed_by: string;
@@ -82,5 +97,7 @@ export interface DashboardStats {
   totalTests: number;
   activeBugs: number;
   successRate: number;
+  aiTests: number;
+  totalRuns: number;
 }
 

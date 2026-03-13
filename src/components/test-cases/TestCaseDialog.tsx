@@ -31,6 +31,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { TestCase, TestSuite } from '@/types';
 import { cn } from '@/lib/utils';
+import { callGeminiWithCache } from '@/lib/aiCache';
 
 interface TestCaseDialogProps {
   open: boolean;
@@ -71,6 +72,7 @@ export function TestCaseDialog({
   const [automationScript, setAutomationScript] = useState('');
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
   const [accordionValue, setAccordionValue] = useState<string>("");
+  const [origin, setOrigin] = useState<'manual' | 'ai'>('manual');
   const { toast } = useToast();
 
   const QUICK_ACCESS_TAGS = ['Regressão', 'Smoke', 'Frontend', 'Backend'];
@@ -124,6 +126,7 @@ export function TestCaseDialog({
       setSuiteId(testCase.suite_id || null);
       setAutomationScript(testCase.automation_script || '');
       setAutomationFramework(testCase.automation_framework || 'cypress');
+      setOrigin(testCase.origin || 'manual');
       if (testCase.automation_script) {
         setAccordionValue("automation");
       }
@@ -166,6 +169,7 @@ export function TestCaseDialog({
         setSuiteId(initialSuiteId || null);
         setAutomationScript('');
         setAutomationFramework('cypress');
+        setOrigin('manual');
         setAccordionValue("");
       }
     }
@@ -216,16 +220,6 @@ export function TestCaseDialog({
       return;
     }
 
-    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!geminiKey) {
-      toast({
-        title: 'Chave não encontrada',
-        description: 'A variável VITE_GEMINI_API_KEY não foi detectada.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setGenerating(mode);
 
     try {
@@ -267,22 +261,12 @@ Analise o requisito e inclua automaticamente no array tags_sugeridas as categori
 - Se o modo for 'Casos de Borda': #NegativeTest | #Resiliência
 Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: systemPrompt }] }]
-        }),
-      });
-
-      if (!response.ok) throw new Error('Erro na API do Gemini');
-
-      const result = await response.json();
-      const content = result.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!content) throw new Error('A IA não retornou conteúdo.');
-
-      const cleanContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      const data = JSON.parse(cleanContent);
+      const data = await callGeminiWithCache<any>(
+        'test_case_generation',
+        `${mode}:${automationFramework}:${systemRequirement}`,
+        systemPrompt,
+        { jsonMode: true }
+      );
 
       // Mapping for Priority
       const priorityMap: Record<string, 'low' | 'medium' | 'high'> = {
@@ -297,6 +281,7 @@ Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
       setSteps(Array.isArray(data.passos) ? data.passos.join('\n') : data.passos || '');
       setExpectedResult(data.resultado_esperado || '');
       setAutomationScript(data.script_automacao || '');
+      setOrigin('ai');
 
       if (data.script_automacao) {
         setAccordionValue("automation");
@@ -371,6 +356,7 @@ Instruções de Saída (REGRAS OBRIGATÓRIAS):
       if (content) {
         const cleanCode = content.replace(/```(javascript|typescript|cypress|playwright)?\n?/g, "").replace(/```\n?/g, "").trim();
         setAutomationScript(cleanCode);
+        setOrigin('ai');
         toast({ title: 'Script gerado!', description: `Código em ${automationFramework} criado com sucesso.` });
       }
     } catch (error: any) {
@@ -417,6 +403,7 @@ Instruções de Saída (REGRAS OBRIGATÓRIAS):
       suite_id: suiteId,
       automation_script: automationScript || null,
       automation_framework: automationFramework,
+      origin: origin || 'manual',
     };
 
     const { error } = testCase
@@ -434,10 +421,22 @@ Instruções de Saída (REGRAS OBRIGATÓRIAS):
     setLoading(false);
   };
 
+  const handleClose = (open: boolean) => {
+    if (!open) {
+      if (title || steps || systemRequirement) {
+        if (!window.confirm('Existem dados não salvos neste formulário (porém foram salvos em rascunho localmente). Deseja realmente fechar?')) {
+          return;
+        }
+      }
+      onOpenChange(false);
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
         onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
         className="max-w-4xl max-h-[95vh] overflow-y-auto bg-slate-950 border-slate-800 text-slate-100 p-0 overflow-hidden flex flex-col"
       >
         <div className="p-6 border-b border-slate-800 bg-slate-900/50">
@@ -812,7 +811,7 @@ Instruções de Saída (REGRAS OBRIGATÓRIAS):
 
         <div className="p-6 border-t border-slate-800 bg-slate-900/50">
           <DialogFooter className="flex-row justify-end space-x-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="text-slate-400 hover:text-white hover:bg-slate-800">
+            <Button type="button" variant="ghost" onClick={() => handleClose(false)} className="text-slate-400 hover:text-white hover:bg-slate-800">
               Cancelar
             </Button>
             <Button
