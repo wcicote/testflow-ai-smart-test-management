@@ -150,6 +150,7 @@ export default function ProjectDetail() {
       tags: testCase.tags,
       priority: testCase.priority,
       test_type: testCase.test_type,
+      automation_status: testCase.automation_status,
       automation_script: testCase.automation_script,
       automation_framework: testCase.automation_framework,
       origin: testCase.origin,
@@ -224,7 +225,18 @@ export default function ProjectDetail() {
     passed: 'Passou',
     failed: 'Falhou',
   };
-  const typeLabels = { manual: 'Manual', automated: 'Automatizado' };
+  const testTypeLabels: Record<string, string> = {
+    functional: 'Funcional',
+    security: 'Segurança',
+    performance: 'Performance',
+    usability: 'Usabilidade',
+  };
+  
+  const automationLabels: Record<string, string> = {
+    manual: 'Manual',
+    automated: 'Automatizado',
+    hybrid: 'Híbrido'
+  };
 
   if (loading) {
     return (
@@ -292,6 +304,7 @@ export default function ProjectDetail() {
                           <TableHead>Título</TableHead>
                           <TableHead>Prioridade</TableHead>
                           <TableHead>Tipo</TableHead>
+                          <TableHead>Automação</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead className="w-[100px]">Ações</TableHead>
                         </TableRow>
@@ -324,7 +337,12 @@ export default function ProjectDetail() {
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline">
-                                {typeLabels[testCase.test_type]}
+                                {testTypeLabels[testCase.test_type]}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="border-primary/50 text-primary">
+                                {automationLabels[testCase.automation_status]}
                               </Badge>
                             </TableCell>
                             <TableCell>

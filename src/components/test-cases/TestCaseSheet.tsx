@@ -64,7 +64,17 @@ export function TestCaseSheet({ open, onOpenChange, testCase }: TestCaseSheetPro
     passed: 'Passou',
     failed: 'Falhou',
   };
-  const typeLabels = { manual: 'Manual', automated: 'Automatizado' };
+  const testTypeLabels = {
+    functional: 'Funcional',
+    security: 'Segurança',
+    performance: 'Performance',
+    usability: 'Usabilidade',
+  };
+  const automationLabels = {
+    manual: 'Manual',
+    automated: 'Automatizado',
+    hybrid: 'Híbrido'
+  };
 
   const getPriorityClass = (priority: string) => {
     switch (priority) {
@@ -109,7 +119,10 @@ export function TestCaseSheet({ open, onOpenChange, testCase }: TestCaseSheetPro
               {priorityLabels[testCase.priority]}
             </Badge>
             <Badge variant="outline">
-              {typeLabels[testCase.test_type]}
+              {testTypeLabels[testCase.test_type]}
+            </Badge>
+            <Badge variant="outline" className="border-primary/50 text-primary">
+              Auto: {automationLabels[testCase.automation_status]}
             </Badge>
             <Badge className={getStatusClass(testCase.status)}>
               {statusLabels[testCase.status]}

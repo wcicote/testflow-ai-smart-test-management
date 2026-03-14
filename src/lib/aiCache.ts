@@ -127,9 +127,21 @@ export async function callGeminiWithCache<T>(
         throw new Error('A IA não retornou conteúdo.');
     }
 
-    // Parse JSON response
-    const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const data = JSON.parse(cleanContent) as T;
+    let data: T;
+    
+    if (options?.jsonMode) {
+        // Parse JSON response
+        const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        try {
+            data = JSON.parse(cleanContent) as T;
+        } catch (e) {
+            console.error('Failed to parse AI JSON response:', cleanContent);
+            throw new Error('A resposta da IA não está em um formato JSON válido.');
+        }
+    } else {
+        // Return raw text (with markdown code blocks removed)
+        data = content.replace(/```(javascript|typescript|cypress|playwright|json)?\n?/g, "").replace(/```\n?/g, "").trim() as unknown as T;
+    }
 
     // Cache the result
     setCachedResponse(type, cacheKey, data, options?.ttlMs);

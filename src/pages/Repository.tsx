@@ -70,8 +70,23 @@ export default function Repository() {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [selectedPriority, setSelectedPriority] = useState<string>('all');
+    const [selectedTestType, setSelectedTestType] = useState<string>('all');
+    const [selectedAutomation, setSelectedAutomation] = useState<string>('all');
 
     const ALL_TAGS = ['Regressão', 'Smoke', 'Sanity', 'Frontend', 'Backend', 'API', 'Mobile'];
+    
+    const testTypeLabels: Record<string, string> = {
+        functional: 'Funcional',
+        security: 'Segurança',
+        performance: 'Performance',
+        usability: 'Usabilidade',
+    };
+    
+    const automationLabels: Record<string, string> = {
+        manual: 'Manual',
+        automated: 'Automatizado',
+        hybrid: 'Híbrido'
+    };
 
     // Dialog states
     const [suiteDialogOpen, setSuiteDialogOpen] = useState(false);
@@ -224,6 +239,7 @@ export default function Repository() {
             tags: testCase.tags,
             priority: testCase.priority,
             test_type: testCase.test_type,
+            automation_status: testCase.automation_status,
             automation_script: testCase.automation_script,
             automation_framework: testCase.automation_framework,
             origin: testCase.origin,
@@ -254,17 +270,21 @@ export default function Repository() {
         setSearchTerm('');
         setSelectedTags([]);
         setSelectedPriority('all');
+        setSelectedTestType('all');
+        setSelectedAutomation('all');
     };
 
-    const hasActiveFilters = searchTerm !== '' || selectedTags.length > 0 || selectedPriority !== 'all';
+    const hasActiveFilters = searchTerm !== '' || selectedTags.length > 0 || selectedPriority !== 'all' || selectedTestType !== 'all' || selectedAutomation !== 'all';
 
     const filteredTests = testCases.filter(tc => {
         const matchesSearch = tc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
             `TC-${tc.case_number}`.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesPriority = selectedPriority === 'all' || tc.priority === selectedPriority;
+        const matchesTestType = selectedTestType === 'all' || tc.test_type === selectedTestType;
+        const matchesAutomation = selectedAutomation === 'all' || tc.automation_status === selectedAutomation;
         const matchesTags = selectedTags.length === 0 || selectedTags.every(tag => tc.tags?.includes(tag));
 
-        return matchesSearch && matchesPriority && matchesTags;
+        return matchesSearch && matchesPriority && matchesTestType && matchesAutomation && matchesTags;
     });
 
     const toggleTagFilter = (tag: string) => {
@@ -510,6 +530,41 @@ export default function Repository() {
                                             <SelectItem value="low">Baixa</SelectItem>
                                         </SelectContent>
                                     </Select>
+                                    <Select value={selectedTestType} onValueChange={setSelectedTestType}>
+                                        <SelectTrigger
+                                            className={cn(
+                                                "w-36 h-11 bg-slate-950 border-slate-800 focus:ring-0 focus:ring-offset-0",
+                                                selectedTestType !== 'all' && "border-primary/50 text-primary"
+                                            )}
+                                        >
+                                            <SelectValue placeholder="Tipo" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-slate-900 border-slate-800">
+                                            <SelectItem value="all">Todos Tipos</SelectItem>
+                                            <SelectItem value="functional">Funcional</SelectItem>
+                                            <SelectItem value="security">Segurança</SelectItem>
+                                            <SelectItem value="performance">Performance</SelectItem>
+                                            <SelectItem value="usability">Usabilidade</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    {/* Automation Filter */}
+                                    <Select value={selectedAutomation} onValueChange={setSelectedAutomation}>
+                                        <SelectTrigger
+                                            className={cn(
+                                                "w-36 h-11 bg-slate-950 border-slate-800 focus:ring-0 focus:ring-offset-0",
+                                                selectedAutomation !== 'all' && "border-primary/50 text-primary"
+                                            )}
+                                        >
+                                            <SelectValue placeholder="Automação" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-slate-900 border-slate-800">
+                                            <SelectItem value="all">Todas</SelectItem>
+                                            <SelectItem value="manual">Manual</SelectItem>
+                                            <SelectItem value="automated">Automatizado</SelectItem>
+                                            <SelectItem value="hybrid">Híbrido</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
                             </div>
 
@@ -605,7 +660,10 @@ export default function Repository() {
                                                                 {tc.priority}
                                                             </span>
                                                             <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded capitalize">
-                                                                {tc.test_type}
+                                                                {testTypeLabels[tc.test_type]}
+                                                            </span>
+                                                            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded capitalize">
+                                                                Auto: {automationLabels[tc.automation_status]}
                                                             </span>
                                                             <span className="text-xs text-muted-foreground">
                                                                 Atualizado em {new Date(tc.updated_at).toLocaleDateString()}

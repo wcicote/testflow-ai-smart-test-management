@@ -36,7 +36,7 @@ interface GeneratedTestCase {
     passos: string[];
     resultado_esperado: string;
     prioridade: 'Alta' | 'Média' | 'Baixa';
-    tipo: 'positivo' | 'negativo' | 'borda';
+    test_type: 'functional' | 'security' | 'performance' | 'usability';
     tags: string[];
     automation_script?: string;
 }
@@ -60,6 +60,7 @@ export function AISuiteGeneratorDialog({
     const [result, setResult] = useState<AIResponse | null>(null);
     const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
     const [automationFramework, setAutomationFramework] = useState<'cypress' | 'playwright'>('cypress');
+    const [scriptProgress, setScriptProgress] = useState<{ current: number; total: number } | null>(null);
     const { toast } = useToast();
 
     const handleGenerate = async () => {
@@ -99,9 +100,8 @@ Retorne APENAS em JSON válido (sem markdown, sem explicações) seguindo este e
       "passos": ["Passo 1", "Passo 2", "Passo 3"],
       "resultado_esperado": "O que deve acontecer ao final",
       "prioridade": "Alta | Média | Baixa",
-      "tipo": "positivo | negativo | borda",
-      "tags": ["Tags relevantes sem #"],
-      "automation_script": "Código de automação funcional e resiliente em ${automationFramework}"
+      "test_type": "functional | security | performance | usability",
+      "tags": ["Tags relevantes sem #"]
     }
   ]
 }
@@ -113,7 +113,7 @@ REGRAS:
 4. O campo "passos" deve ser um array de strings numeradas.
 5. Varie as prioridades realisticamente (nem tudo é Alta).
 6. As tags devem refletir a natureza do teste (ex: Segurança, UX, Performance, Regressão, Smoke).
-7. PARA O CAMPO automation_script: Se Cypress, use \`it(titulo, () => { ... })\` com seletores data-testid. Se Playwright, use \`test(titulo, async ({ page }) => { ... })\` com locators modernos. Não coloque os crases/marcação Markdown no JSON.`;
+7. NUNCA inclua o script de automação nesta resposta. Ele será solicitado separadamente para cada caso.`;
 
             const data = await callGeminiWithCache<AIResponse>(
                 'suite_generation',
@@ -182,10 +182,43 @@ REGRAS:
 
             if (suiteError) throw suiteError;
 
-            // 2. Insert selected test cases
-            const casesToInsert = result.test_cases
-                .filter((_, i) => selectedIndices.has(i))
-                .map(tc => ({
+            // 2. Generate scripts individually for each selected case
+            const selectedCases = result.test_cases.filter((_, i) => selectedIndices.has(i));
+            setScriptProgress({ current: 0, total: selectedCases.length });
+
+            const casesToInsert = [];
+            
+            for (let i = 0; i < selectedCases.length; i++) {
+                const tc = selectedCases[i];
+                setScriptProgress({ current: i + 1, total: selectedCases.length });
+                
+                let script = null;
+                try {
+                    const prompt = `Atue como um Principal QA Automation Engineer. Gere um script de automação para este caso de teste:
+                    
+                    Título: ${tc.titulo}
+                    Passos: ${Array.isArray(tc.passos) ? tc.passos.join('\n') : tc.passos}
+                    Massa: ${tc.massa_dados}
+                    Expectativa: ${tc.resultado_esperado}
+                    Framework: ${automationFramework}
+
+                    REGRAS:
+                    1. Retorne APENAS o código puro. Sem markdown, sem explicações.
+                    2. Use seletores data-testid quando possível.
+                    3. Se Cypress: use it(). Se Playwright: use test().`;
+
+                    const scriptResponse = await callGeminiWithCache<string>(
+                        'automation_script',
+                        `${automationFramework}:${tc.titulo}:${tc.passos}`,
+                        prompt,
+                        { jsonMode: false }
+                    );
+                    script = scriptResponse;
+                } catch (err) {
+                    console.error(`Error generating script for ${tc.titulo}:`, err);
+                }
+
+                casesToInsert.push({
                     project_id: projectId,
                     suite_id: suiteData.id,
                     title: tc.titulo,
@@ -194,14 +227,16 @@ REGRAS:
                     steps: Array.isArray(tc.passos) ? tc.passos.join('\n') : tc.passos || null,
                     expected_result: tc.resultado_esperado || null,
                     priority: priorityMap[tc.prioridade] || 'medium',
-                    test_type: 'automated' as const,
+                    test_type: tc.test_type || 'functional',
+                    automation_status: script && script.trim() !== '' ? 'automated' as const : 'manual' as const,
                     status: 'ready' as const,
                     tags: tc.tags || [],
                     system_requirement: input,
                     origin: 'ai' as const,
-                    automation_script: tc.automation_script || null,
+                    automation_script: script || null,
                     automation_framework: automationFramework,
-                }));
+                });
+            }
 
             const { error: casesError } = await supabase
                 .from('test_cases')
@@ -218,20 +253,23 @@ REGRAS:
             setResult(null);
             setInput('');
             setSelectedIndices(new Set());
+            setScriptProgress(null);
             onSuccess();
             onOpenChange(false);
         } catch (error: any) {
             toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' });
         } finally {
             setSaving(false);
+            setScriptProgress(null);
         }
     };
 
-    const getTipoBadge = (tipo: string) => {
+    const getTestTypeBadge = (tipo: string) => {
         switch (tipo) {
-            case 'positivo': return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px]">Positivo</Badge>;
-            case 'negativo': return <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-[10px]">Negativo</Badge>;
-            case 'borda': return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px]">Borda</Badge>;
+            case 'functional': return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px]">Funcionamento</Badge>;
+            case 'security': return <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-[10px]">Segurança</Badge>;
+            case 'performance': return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px]">Performance</Badge>;
+            case 'usability': return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-[10px]">Usabilidade</Badge>;
             default: return <Badge variant="outline" className="text-[10px]">{tipo}</Badge>;
         }
     };
@@ -406,7 +444,7 @@ REGRAS:
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2 flex-wrap mb-2">
                                                         <span className="text-sm font-semibold text-slate-200">{tc.titulo}</span>
-                                                        {getTipoBadge(tc.tipo)}
+                                                        {getTestTypeBadge(tc.test_type)}
                                                         {getPrioridadeBadge(tc.prioridade)}
                                                     </div>
 
@@ -464,8 +502,20 @@ REGRAS:
                                         disabled={saving || selectedIndices.size === 0}
                                         className="px-6 bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20"
                                     >
-                                        {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-                                        Salvar {selectedIndices.size} caso{selectedIndices.size !== 1 ? 's' : ''} no projeto
+                                        {saving ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                {scriptProgress 
+                                                    ? `Gerando Scripts (${scriptProgress.current}/${scriptProgress.total})...`
+                                                    : 'Salvando...'
+                                                }
+                                            </>
+                                        ) : (
+                                            <>
+                                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                                                Salvar {selectedIndices.size} caso{selectedIndices.size !== 1 ? 's' : ''} no projeto
+                                            </>
+                                        )}
                                     </Button>
                                 </div>
                             </>

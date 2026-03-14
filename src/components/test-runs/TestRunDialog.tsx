@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { TestCase, TestRun } from '@/types';
@@ -56,6 +56,103 @@ export function TestRunDialog({
     const [loading, setLoading] = useState(false);
     const { toast } = useToast();
 
+    // Use refs to handle cleanup logic with latest state
+    const stateRef = useRef({ testRun, currentCaseIndex, step, executions, testCases });
+    useEffect(() => {
+        stateRef.current = { testRun, currentCaseIndex, step, executions, testCases };
+    }, [testRun, currentCaseIndex, step, executions, testCases]);
+
+    // Auto-pause when closing dialog or leaving page
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (stateRef.current.step === 'executing' && stateRef.current.testRun) {
+                handlePauseRun(true);
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            // Auto-pause on component unmount (if still executing)
+            if (stateRef.current.step === 'executing' && stateRef.current.testRun) {
+                handlePauseRun(true);
+            }
+        };
+    }, []);
+    const saveExecutions = async () => {
+        const { testRun: targetRun, testCases: targetCases, executions: targetExecs } = stateRef.current;
+        if (!targetRun) return;
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        for (const tc of targetCases) {
+            const exec = targetExecs[tc.id];
+            if (!exec) continue;
+            
+            if (exec.id) {
+                 await supabase.from('test_executions').update({
+                    status: exec.status,
+                    notes: exec.notes || null,
+                    bug_description: exec.status === 'failed' ? exec.bug_description : null,
+                    executed_by: user.id,
+                }).eq('id', exec.id);
+                
+                if (exec.files.length > 0) {
+                    await uploadEvidences(exec.id, exec.files);
+                }
+            } else {
+                 const { data: inserted, error } = await supabase.from('test_executions').insert({
+                    test_case_id: tc.id,
+                    test_run_id: targetRun.id,
+                    status: exec.status,
+                    notes: exec.notes || null,
+                    bug_description: exec.status === 'failed' ? exec.bug_description : null,
+                    executed_by: user.id,
+                }).select().single();
+
+                if (!error && inserted && exec.files.length > 0) {
+                    await uploadEvidences(inserted.id, exec.files);
+                }
+            }
+
+            // Sync test case status
+            if (exec.status === 'failed' || exec.status === 'passed') {
+                await supabase.from('test_cases').update({ status: exec.status }).eq('id', tc.id);
+            }
+        }
+    };
+
+    const handlePauseRun = async (silent = false) => {
+        const { testRun: targetRun, currentCaseIndex: targetIndex } = stateRef.current;
+        
+        if (!targetRun || targetRun.status === 'paused' || targetRun.status === 'passed' || targetRun.status === 'failed') return;
+        
+        if (!silent) setLoading(true);
+        
+        await supabase.from('test_runs').update({
+            status: 'paused',
+            current_step_index: targetIndex,
+            updated_at: new Date().toISOString()
+        }).eq('id', targetRun.id);
+
+        await saveExecutions();
+
+        if (!silent) {
+            toast({ title: 'Execução Pausada', description: `Sua progressão foi salva. Você pode continuar depois.` });
+            setLoading(false);
+            onSuccess();
+            onOpenChange(false);
+        }
+    };
+
+    useEffect(() => {
+        // Auto-pause when 'open' becomes false
+        if (!open && stateRef.current.step === 'executing' && stateRef.current.testRun) {
+            handlePauseRun(true);
+        }
+    }, [open]);
+
     useEffect(() => {
         if (open && (suiteId || testRunId)) {
             if (testRunId) {
@@ -80,13 +177,12 @@ export function TestRunDialog({
                 setRunName(runInfo.name);
             }
 
-            const { data: pendingExecs } = await supabase.from('test_executions')
+            const { data: allExecs } = await supabase.from('test_executions')
                 .select('*')
-                .eq('test_run_id', testRunId)
-                .eq('status', 'not_executed');
+                .eq('test_run_id', testRunId);
             
-            if (pendingExecs && pendingExecs.length > 0) {
-                const caseIds = pendingExecs.map(e => e.test_case_id);
+            if (allExecs && allExecs.length > 0) {
+                const caseIds = allExecs.map(e => e.test_case_id);
                 const { data: casesData } = await supabase.from('test_cases')
                     .select('*')
                     .in('id', caseIds)
@@ -96,17 +192,19 @@ export function TestRunDialog({
                     setTestCases(casesData as unknown as TestCase[]);
                     const initExecs: Record<string, RunState> = {};
                     casesData.forEach(tc => {
-                        const exec = pendingExecs.find(e => e.test_case_id === tc.id);
+                        const exec = allExecs.find(e => e.test_case_id === tc.id);
                         initExecs[tc.id] = {
                             id: exec?.id,
                             test_case_id: tc.id,
-                            status: 'not_executed',
+                            status: (exec?.status as RunState['status']) || 'not_executed',
                             notes: exec?.notes || '',
                             bug_description: exec?.bug_description || '',
                             files: []
                         };
                     });
                     setExecutions(initExecs);
+                    // Resume from the last saved index
+                    setCurrentCaseIndex((runInfo as any).current_step_index || 0);
                 }
             } else {
                  setTestCases([]);
@@ -199,6 +297,14 @@ export function TestRunDialog({
         setLoading(false);
     };
 
+    const saveCurrentProgress = async (index: number) => {
+        if (!testRun) return;
+        await supabase.from('test_runs').update({
+            current_step_index: index,
+            updated_at: new Date().toISOString()
+        }).eq('id', testRun.id);
+    };
+
     const currentCase = testCases[currentCaseIndex];
     const currentState = currentCase ? executions[currentCase.id] : null;
 
@@ -210,12 +316,22 @@ export function TestRunDialog({
         }));
     };
 
-    const nextCase = () => {
-        if (currentCaseIndex < testCases.length - 1) setCurrentCaseIndex(prev => prev + 1);
+    const nextCase = async () => {
+        if (currentCaseIndex < testCases.length - 1) {
+            const nextIdx = currentCaseIndex + 1;
+            setCurrentCaseIndex(nextIdx);
+            await saveCurrentProgress(nextIdx);
+            await saveExecutions();
+        }
     };
 
-    const prevCase = () => {
-        if (currentCaseIndex > 0) setCurrentCaseIndex(prev => prev - 1);
+    const prevCase = async () => {
+        if (currentCaseIndex > 0) {
+            const prevIdx = currentCaseIndex - 1;
+            setCurrentCaseIndex(prevIdx);
+            await saveCurrentProgress(prevIdx);
+            await saveExecutions();
+        }
     };
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -264,62 +380,6 @@ export function TestRunDialog({
                 file_name: sf.file.name,
             });
         }
-    };
-
-    const saveExecutions = async () => {
-        if (!testRun) return;
-        const { data: { user } } = await supabase.auth.getUser();
-
-        for (const tc of testCases) {
-            const exec = executions[tc.id];
-            
-            if (exec.id) {
-                 await supabase.from('test_executions').update({
-                    status: exec.status,
-                    notes: exec.notes || null,
-                    bug_description: exec.status === 'failed' ? exec.bug_description : null,
-                    executed_by: user!.id,
-                }).eq('id', exec.id);
-                
-                if (exec.files.length > 0) {
-                    await uploadEvidences(exec.id, exec.files);
-                }
-            } else {
-                 const { data: inserted, error } = await supabase.from('test_executions').insert({
-                    test_case_id: tc.id,
-                    test_run_id: testRun.id,
-                    status: exec.status,
-                    notes: exec.notes || null,
-                    bug_description: exec.status === 'failed' ? exec.bug_description : null,
-                    executed_by: user!.id,
-                }).select().single();
-
-                if (!error && inserted && exec.files.length > 0) {
-                    await uploadEvidences(inserted.id, exec.files);
-                }
-            }
-
-            // Sync test case status
-            if (exec.status === 'failed' || exec.status === 'passed') {
-                await supabase.from('test_cases').update({ status: exec.status }).eq('id', tc.id);
-            }
-        }
-    };
-
-    const handlePauseRun = async () => {
-        if (!testRun) return;
-        setLoading(true);
-        await supabase.from('test_runs').update({
-            status: 'paused',
-            updated_at: new Date().toISOString()
-        }).eq('id', testRun.id);
-
-        await saveExecutions();
-
-        toast({ title: 'Execução Pausada', description: `Você pode continuar de onde parou depois.` });
-        setLoading(false);
-        onSuccess();
-        onOpenChange(false);
     };
 
     const handleFinishRun = async () => {
@@ -417,10 +477,10 @@ export function TestRunDialog({
                             {getStatusBadge(currentState?.status || 'not_executed')}
                         </div>
                     </div>
-                    <div className="flex gap-2">
-                         <Button variant="outline" onClick={handlePauseRun} disabled={loading} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700">
-                             {loading ? 'Pausando...' : 'Pausar'}
-                         </Button>
+                     <div className="flex gap-2">
+                          <Button variant="outline" onClick={() => handlePauseRun()} disabled={loading} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700">
+                              {loading ? 'Pausando...' : 'Pausar'}
+                          </Button>
                          <Button variant="outline" onClick={handleFinishRun} disabled={loading} className="bg-primary/20 hover:bg-primary/30 text-primary border-primary/50">
                              {loading ? 'Finalizando...' : 'Finalizar Execução'}
                          </Button>
@@ -435,9 +495,9 @@ export function TestRunDialog({
                             <>
                                 <div className="space-y-2">
                                     <h3 className="text-2xl font-semibold text-slate-100"><span className="text-slate-500 mr-2 text-xl font-mono">TC-{currentCase.case_number}</span>{currentCase.title}</h3>
-                                    <div className="flex gap-2 text-sm text-slate-400">
+                                     <div className="flex gap-2 text-sm text-slate-400">
                                         {currentCase.priority === 'high' && <Badge variant="outline" className="border-red-500/30 text-red-400">Alta Prioridade</Badge>}
-                                        {currentCase.test_type === 'automated' && <Badge variant="outline" className="border-blue-500/30 text-blue-400">Automatizado</Badge>}
+                                        {currentCase.automation_status === 'automated' && <Badge variant="outline" className="border-blue-500/30 text-blue-400">Automatizado</Badge>}
                                     </div>
                                 </div>
 

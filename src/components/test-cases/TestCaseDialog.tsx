@@ -60,7 +60,7 @@ export function TestCaseDialog({
   const [steps, setSteps] = useState('');
   const [expectedResult, setExpectedResult] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
-  const [testType, setTestType] = useState<'manual' | 'automated'>('manual');
+  const [testType, setTestType] = useState<'functional' | 'security' | 'performance' | 'usability'>('functional');
   const [status, setStatus] = useState<'draft' | 'ready' | 'running' | 'passed' | 'failed'>('draft');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
@@ -143,7 +143,7 @@ export function TestCaseDialog({
           setSteps(data.steps || '');
           setExpectedResult(data.expectedResult || '');
           setPriority(data.priority || 'medium');
-          setTestType(data.testType || 'manual');
+          setTestType(data.testType || 'functional');
           setTags(data.tags || []);
           setAutomationFramework(data.automationFramework || 'cypress');
           setAutomationScript(data.automationScript || '');
@@ -163,7 +163,7 @@ export function TestCaseDialog({
         setSteps('');
         setExpectedResult('');
         setPriority('medium');
-        setTestType('manual');
+        setTestType('functional');
         setStatus('draft');
         setTags([]);
         setSuiteId(initialSuiteId || null);
@@ -241,16 +241,13 @@ Você deve retornar apenas um objeto JSON seguindo este esquema, sem textos expl
   "passos": ["Passo 1...", "Passo 2...", "Passo 3..."],
   "resultado_esperado": "O estado final esperado do sistema",
   "prioridade": "Alta | Média | Baixa",
-  "tags_sugeridas": ["Array de tags baseadas no contexto"],
-  "script_automacao": "Código de automação funcional e resiliente"
+  "tags_sugeridas": ["Array de tags baseadas no contexto"]
 }
 
-Regras Específicas para 'script_automacao':
-1. GERE O SCRIPT APENAS PARA O FRAMEWORK: ${automationFramework === 'cypress' ? 'Cypress' : 'Playwright'}.
-2. Se Cypress: Use it(titulo, () => { ... }) e seletores data-testid.
-3. Se Playwright: Use test(titulo, async ({ page }) => { ... }) com locators modernos.
-4. Use os dados de 'massa_dados' e valide o 'resultado_esperado'.
-5. NUNCA inclua markdown (\`\`\`) dentro do valor da string JSON.
+Regras:
+1. NUNCA inclua o script de automação nesta resposta. Ele será gerado em uma etapa posterior.
+2. Identifique tecnicamente os passos e pré-condições.
+3. NUNCA inclua markdown (\`\`\`) dentro do valor da string JSON.
 
 Lógica de Auto-Tagging:
 Analise o requisito e inclua automaticamente no array tags_sugeridas as categorias que se aplicam:
@@ -280,7 +277,6 @@ Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
       setDataSetup(typeof data.massa_dados === 'object' ? JSON.stringify(data.massa_dados, null, 2) : data.massa_dados || '');
       setSteps(Array.isArray(data.passos) ? data.passos.join('\n') : data.passos || '');
       setExpectedResult(data.resultado_esperado || '');
-      setAutomationScript(data.script_automacao || '');
       setOrigin('ai');
 
       if (data.script_automacao) {
@@ -303,8 +299,20 @@ Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
 
       toast({
         title: mode === 'happy' ? 'Caminho Feliz Gerado!' : 'Casos de Borda Gerados!',
-        description: 'Os campos e tags foram preenchidos seguindo o padrão de QA Architect.',
+        description: 'Os campos foram preenchidos. Gerando script de automação...',
       });
+
+      // AUTO GENERATE SCRIPT AFTER CASE IS GENERATED
+      if (data.titulo && data.passos) {
+          // We call it directly but we need to wait for state updates? 
+          // Actually we can pass the data directly to a modified version or just rely on state.
+          // Since React state updates are async, it's better to pass params to handleGenerateAutomationScript or just call it after a tiny delay
+          // But a better way is to refactor handleGenerateAutomationScript to accept optional params.
+          setTimeout(() => {
+              handleGenerateAutomationScript();
+          }, 500);
+      }
+
     } catch (error: any) {
       console.error('AI generation error:', error);
       toast({ title: 'Erro ao gerar', description: error.message, variant: 'destructive' });
@@ -318,9 +326,6 @@ Identifique também a funcionalidade (ex: #Checkout, #Auth, #Dashboard).`;
       toast({ title: 'Passos necessários', description: 'Escreva os passos manuais primeiro.', variant: 'destructive' });
       return;
     }
-
-    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!geminiKey) return;
 
     setIsGeneratingScript(true);
     try {
@@ -342,24 +347,20 @@ Instruções de Saída (REGRAS OBRIGATÓRIAS):
 6. Validação Final: Inclua uma asserção (expect ou should) que verifique rigorosamente o 'Resultado Esperado'.
 7. Retorne APENAS o código bruto, sem explicações, sem markdown (sem \`\`\`), sem blocos de texto adicionais.`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }]
-        }),
-      });
-
-      const result = await response.json();
-      const content = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      const content = await callGeminiWithCache<string>(
+        'automation_script_single',
+        `${automationFramework}:${title}:${steps}`,
+        prompt,
+        { jsonMode: false }
+      );
 
       if (content) {
-        const cleanCode = content.replace(/```(javascript|typescript|cypress|playwright)?\n?/g, "").replace(/```\n?/g, "").trim();
-        setAutomationScript(cleanCode);
+        setAutomationScript(content);
         setOrigin('ai');
         toast({ title: 'Script gerado!', description: `Código em ${automationFramework} criado com sucesso.` });
       }
     } catch (error: any) {
+      console.error('Automation script generation error:', error);
       toast({ title: 'Erro ao gerar script', description: error.message, variant: 'destructive' });
     } finally {
       setIsGeneratingScript(false);
@@ -398,6 +399,7 @@ Instruções de Saída (REGRAS OBRIGATÓRIAS):
       tags,
       priority,
       test_type: testType,
+      automation_status: automationScript && automationScript.trim() !== '' ? 'automated' : 'manual',
       status,
       project_id: projectId,
       suite_id: suiteId,
@@ -571,8 +573,10 @@ Instruções de Saída (REGRAS OBRIGATÓRIAS):
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-800">
-                    <SelectItem value="manual">Manual</SelectItem>
-                    <SelectItem value="automated">Auto</SelectItem>
+                    <SelectItem value="functional">Funcional</SelectItem>
+                    <SelectItem value="security">Segurança</SelectItem>
+                    <SelectItem value="performance">Performance</SelectItem>
+                    <SelectItem value="usability">Usabilidade</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

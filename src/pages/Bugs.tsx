@@ -28,6 +28,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Bug, BugEvidence } from '@/types';
 import { BugStatusSelect } from '@/components/bugs/BugStatusSelect';
+import { callGeminiWithCache } from '@/lib/aiCache';
 
 export default function Bugs() {
   const [bugs, setBugs] = useState<Bug[]>([]);
@@ -132,21 +133,8 @@ export default function Bugs() {
   }, []);
 
   const handleSuggestRootCause = async (bug: Bug) => {
-    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!geminiKey) {
-      toast({
-        title: 'IA não configurada',
-        description: 'VITE_GEMINI_API_KEY não encontrada no arquivo .env',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setAiLoading(true);
     setAiSuggestion(null);
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
     try {
       console.log('Starting AI analysis for bug:', bug.id);
@@ -160,34 +148,19 @@ export default function Bugs() {
 
 Responda em português brasileiro, de forma técnica mas clara.`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            { role: 'user', parts: [{ text: prompt }] }
-          ]
-        }),
-        signal: controller.signal
-      });
+      const content = await callGeminiWithCache<string>(
+        'root_cause_analysis',
+        `${bug.id}:${bug.bug_description}`,
+        prompt,
+        { jsonMode: false }
+      );
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Gemini API Error:', errorData);
-        throw new Error(errorData.error?.message || 'Erro na API do Gemini');
-      }
-
-      const result = await response.json();
-      console.log('AI Analysis result:', result);
-      const content = result.candidates?.[0]?.content?.parts?.[0]?.text || "Não foi possível gerar uma análise.";
-      setAiSuggestion(content);
+      setAiSuggestion(content || "Não foi possível gerar uma análise.");
     } catch (e: any) {
       console.error('AI Analysis error:', e);
       toast({
         title: 'Erro na análise de IA',
-        description: e.name === 'AbortError' ? 'A IA demorou muito para responder. Tente novamente.' : e.message,
+        description: e.message,
         variant: 'destructive'
       });
     } finally {

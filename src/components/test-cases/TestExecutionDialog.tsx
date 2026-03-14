@@ -17,6 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { TestCase } from '@/types';
 import { AIBugReport, BugReport } from '@/components/ai/AIBugReport';
+import { callGeminiWithCache } from '@/lib/aiCache';
 
 interface TestExecutionDialogProps {
   open: boolean;
@@ -77,9 +78,6 @@ export function TestExecutionDialog({
       return;
     }
 
-    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!geminiKey) return;
-
     setAnalyzingSeverity(true);
 
     try {
@@ -92,27 +90,12 @@ Responda APENAS em JSON válido com esta estrutura:
 
 Descrição do Bug: ${description}`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            { role: 'user', parts: [{ text: prompt }] }
-          ],
-          generationConfig: {
-            responseMimeType: "application/json",
-          }
-        }),
-      });
-
-      if (!response.ok) throw new Error('Erro na API do Gemini');
-
-      const result = await response.json();
-      const content = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      if (!content) return;
-
-      const data = JSON.parse(content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim());
+      const data = await callGeminiWithCache<any>(
+        'severity_analysis',
+        description,
+        prompt,
+        { jsonMode: true }
+      );
 
       if (data.severity) {
         setSuggestedSeverity(data.severity as Severity);

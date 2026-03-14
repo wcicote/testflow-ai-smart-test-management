@@ -31,7 +31,8 @@ export interface TestCase {
   expected_result: string | null;
   tags: string[];
   priority: 'low' | 'medium' | 'high';
-  test_type: 'manual' | 'automated';
+  test_type: 'functional' | 'security' | 'performance' | 'usability';
+  automation_status: 'manual' | 'automated' | 'hybrid';
   status: 'draft' | 'ready' | 'running' | 'passed' | 'failed';
   automation_script: string | null;
   automation_framework: 'cypress' | 'playwright' | null;
@@ -47,6 +48,7 @@ export interface TestRun {
   suite_id?: string | null;
   name: string;
   status: 'running' | 'paused' | 'passed' | 'failed' | 'completed';
+  current_step_index?: number;
   executed_by: string;
   test_suites?: { name: string };
   created_at: string;
